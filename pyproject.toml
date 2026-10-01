@@ -1,0 +1,17 @@
+[project]
+name = "threadvault"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+authors = [
+    { name = "Mahiro Sakaue", email = "mahhie418@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = []
+
+[project.scripts]
+threadvault = "threadvault:main"
+
+[build-system]
+requires = ["uv_build>=0.12.21,<0.13.0"]
+build-backend = "uv_build"
