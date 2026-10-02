@@ -1,7 +1,7 @@
 [project]
 name = "threadvault"
 version = "0.1.0"
-description = ""
+description = "Back up a Slack workspace to a GitHub repository as an AI-readable vault."
 readme = "README.md"
 authors = [
     { name = "Mahiro Sakaue", email = "mahhie418@gmail.com" }
@@ -9,9 +9,52 @@ authors = [
 requires-python = ">=3.14"
 dependencies = []
 
-[project.scripts]
-threadvault = "threadvault:main"
-
 [build-system]
 requires = ["uv_build>=0.12.21,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.2",
+    "pytest>=9.1.1",
+    "ruff>=0.16.10",
+    "ty>=0.0.84",
+]
+
+[tool.ruff]
+src = ["src", "scripts"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "CPY", "EM", "INP", "TC", "TRY",
+    "COM812", "D201", "D202", "D211", "E501", "E701", "PTH118"
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = [
+    "D",
+    "PLR2004", "S101"
+]
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "single"
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.isort]
+lines-after-imports = 1
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pyright]
+extraPaths = ["scripts"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["scripts"]
+
+[tool.ty.environment]
+extra-paths = ["scripts"]
