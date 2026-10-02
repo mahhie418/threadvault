@@ -7,7 +7,10 @@ authors = [
     { name = "Mahiro Sakaue", email = "mahhie418@gmail.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "platformdirs>=4.12.2",
+    "python-dotenv>=1.2.4",
+]
 
 [project.scripts]
 threadvault = "threadvault.terminal:main"
@@ -30,7 +33,7 @@ src = ["src", "scripts"]
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-    "CPY", "EM", "INP", "TC", "TRY",
+    "C90", "CPY", "EM", "INP", "TC", "TRY", "PLR09",
     "COM812", "D201", "D202", "D211", "E501", "E701", "PTH118"
 ]
 
