@@ -2,6 +2,7 @@
 
 import argparse
 
+import threadvault.encryption
 import threadvault.product
 
 def main(
@@ -30,7 +31,18 @@ def main(
 def _build() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(prog = threadvault.product.COMMAND, description = threadvault.product.SUMMARY)
-    parser.add_subparsers(title = 'commands', metavar = '<command>', required = True)
     parser.add_argument('--version', action = 'version', version = f'%(prog)s {threadvault.product.VERSION}')
 
+    commands = parser.add_subparsers(title = 'commands', metavar = '<command>', required = True)
+    encryption = commands.add_parser('generate-key', help = 'print a new key for THREADVAULT_SECRET_KEY')
+    encryption.set_defaults(handler = _generate_key)
+
     return parser
+
+def _generate_key(
+    _: argparse.Namespace
+) -> int:
+
+    print(threadvault.encryption.generate())
+
+    return 0

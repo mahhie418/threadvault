@@ -1,3 +1,4 @@
+import cryptography.fernet
 import pytest
 
 import threadvault.product
@@ -22,3 +23,11 @@ def test_terminal_missing(
 
     assert exception.value.code == 2
     assert 'required: <command>' in capsys.readouterr().err
+
+def test_terminal_command_generate_key(
+    capsys: pytest.CaptureFixture[str]
+) -> None:
+
+    assert threadvault.terminal.main(['generate-key']) == 0
+
+    cryptography.fernet.Fernet(capsys.readouterr().out.strip())
