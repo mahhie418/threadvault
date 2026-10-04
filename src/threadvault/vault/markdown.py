@@ -1,7 +1,17 @@
 """AI-friendly Markdown made from the messages in the vault."""
 
+import collections
 import collections.abc
+import datetime
+import decimal
+import itertools
+import os
+import pathlib
 import re
+import typing
+import zoneinfo
+
+import threadvault.configuration
 
 _PATTERN_CONTENT = re.compile(r'(```.*?```|`[^`\n]*`|<[^<>\n]*>)', re.DOTALL)
 _PATTERN_BOLD = re.compile(r'(?<![A-Za-z0-9*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![A-Za-z0-9*])')
@@ -9,6 +19,11 @@ _PATTERN_STRIKETHROUGH = re.compile(r'(?<![A-Za-z0-9~])~(?=\S)([^~\n]+?)(?<=\S)~
 _PATTERN_BLANK = re.compile(r'\n{3,}')
 
 _MENTION_CATEGORY = frozenset({'everyone', 'channel', 'here'})
+
+_WEEKDAYS: dict[threadvault.configuration.Language, tuple[str, ...]] = {
+    'en': ('Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'),
+    'ja': ('月', '火', '水', '木', '金', '土', '日')
+}
 
 def convert(
     text: str,
@@ -34,6 +49,73 @@ def convert(
     markdown = ''.join(_translate(piece, names) if index % 2 else _format(piece) for index, piece in enumerate(contents))
 
     return _PATTERN_BLANK.sub('\n\n', markdown).strip('\n')
+
+def transcribe(
+    directory: pathlib.Path,
+    channel: collections.abc.Mapping[str, typing.Any],
+    messages: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],
+    *,
+    users: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],
+    channels: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],
+    url: str,
+    timezone: str,
+    language: threadvault.configuration.Language
+) -> None:
+
+    """Writes the Markdown of a channel, one file a month.
+
+    A message goes to the file of the month in which it was posted, in
+    `timezone`, under a heading for its day. Thread replies follow their
+    parent, whenever they were posted; a reply whose parent is not given
+    stands on its own. Each message links to Slack. Each file holds the given
+    messages of its month and replaces the file that was there, so give every
+    message of each month and every reply of their threads.
+
+    Args:
+        directory: Directory of the channel among the Markdown files.
+        channel: The channel as conversations.list returns it.
+        messages: Messages of the channel, each once, as conversations.history
+                  and conversations.replies return them.
+        users: Users as users.list returns them.
+        channels: Channels as conversations.list returns them, for mentions.
+        url: Address of the workspace, as auth.test returns it.
+        timezone: IANA time zone for the months, days and times.
+        language: Language of the day headings.
+    """
+
+    names = {user['id']: _name(user) for user in users} | {channel['id']: channel['name'] for channel in channels}
+    zone = zoneinfo.ZoneInfo(timezone)
+    ordered = sorted(messages, key = lambda message: decimal.Decimal(message['ts']))
+    timestamps = {message['ts'] for message in ordered}
+    replies: dict[str, list[collections.abc.Mapping[str, typing.Any]]] = collections.defaultdict(list)
+    months: dict[str, list[collections.abc.Mapping[str, typing.Any]]] = collections.defaultdict(list)
+
+    for message in ordered:
+
+        thread_ts = message.get('thread_ts', message['ts'])
+        month = _localise(message, zone).strftime('%Y-%m')
+
+        (replies[thread_ts] if thread_ts != message['ts'] and thread_ts in timestamps else months[month]).append(message)
+
+    directory.mkdir(parents = True, exist_ok = True)
+
+    for month, parents in months.items():
+
+        lines = [f'# #{channel['name']} {month}']
+
+        for day, group in itertools.groupby(parents, key = lambda message: _localise(message, zone).date()):
+
+            lines += ['', f'## {day.isoformat()} ({_WEEKDAYS[language][day.weekday()]})']
+
+            for parent in group:
+
+                lines += _render(parent, '###', day, channel['id'], url, zone, names)
+
+                for reply in replies[parent['ts']]: lines += _render(reply, '####', day, channel['id'], url, zone, names)
+
+        text = '\n'.join(lines)
+
+        pathlib.Path(os.path.join(directory, f'{month}.md')).write_text(f'{text}\n', encoding = 'utf-8', newline = '\n')
 
 def _unescape(
     text: str
@@ -65,3 +147,38 @@ def _translate(
         case '#': return f'#{names.get(target[1:]) or label or target[1:]}'
         case '!': return f'@{target[1:]}' if target[1:] in _MENTION_CATEGORY else label or target[1:]
         case _: return f'<{url}>' if label in {'', url} else f'[{label}]({url})'
+
+def _name(
+    user: collections.abc.Mapping[str, typing.Any]
+) -> str:
+
+    profile: collections.abc.Mapping[str, str] = user.get('profile', {})
+
+    return profile.get('display_name') or profile.get('real_name') or user.get('name') or user['id']
+
+def _localise(
+    message: collections.abc.Mapping[str, typing.Any],
+    zone: zoneinfo.ZoneInfo
+) -> datetime.datetime:
+
+    return datetime.datetime.fromtimestamp(float(message['ts']), zone)
+
+def _render(
+    message: collections.abc.Mapping[str, typing.Any],
+    marks: str,
+    day: datetime.date,
+    channel: str,
+    url: str,
+    zone: zoneinfo.ZoneInfo,
+    names: collections.abc.Mapping[str, str]
+) -> list[str]:
+
+    time = _localise(message, zone)
+    label = time.strftime('%H:%M' if time.date() == day else '%Y-%m-%d %H:%M')
+    link = f'{url.rstrip('/')}/archives/{channel}/p{typing.cast(str, message['ts']).replace('.', '')}'
+    author = names.get(message.get('user', '')) or message.get('username') or message.get('user') or message.get('bot_id', '')
+    text = convert(message.get('text', ''), names)
+
+    if message.get('thread_ts', message['ts']) != message['ts']: link += f'?thread_ts={message['thread_ts']}&cid={channel}'
+
+    return ['', f'{marks} [{label}]({link}) {author}'] + (['', text] if text else [])

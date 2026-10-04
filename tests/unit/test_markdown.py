@@ -1,8 +1,17 @@
+import json
+import os
+import pathlib
+import typing
+
 import pytest
 
+import threadvault.configuration
 import threadvault.vault.markdown
 
 NAMES = {'UXXX1': 'xxx1', 'CXXX1': 'general'}
+URL = 'https://xxx.slack.com/'
+
+MONTHS_SPLIT = [('Asia/Tokyo', ['2023-11.md']), ('UTC', ['2023-10.md'])]
 
 TEXTS_CORRESPONDENCE = [
     ('xxx', 'xxx'),
@@ -22,6 +31,25 @@ TEXTS_CORRESPONDENCE = [
     ('&gt; xxx\nxxx', '> xxx\nxxx')
 ]
 
+def locate(
+    *names: str
+) -> pathlib.Path:
+
+    return pathlib.Path(os.path.join(pathlib.Path(__file__).parents[1], 'fixtures', *names))
+
+def render(
+    directory: pathlib.Path,
+    messages: list[dict[str, typing.Any]],
+    timezone: str,
+    language: threadvault.configuration.Language
+) -> None:
+
+    users = json.loads(locate('slack', 'users.list.json').read_text(encoding = 'utf-8'))
+    channels = json.loads(locate('slack', 'conversations.list.json').read_text(encoding = 'utf-8'))
+    channel = next(entry for entry in channels if entry['id'] == 'CXXX1')
+
+    threadvault.vault.markdown.transcribe(directory, channel, messages, users = users, channels = channels, url = URL, timezone = timezone, language = language)
+
 @pytest.mark.parametrize(('text', 'expected'), TEXTS_CORRESPONDENCE)
 def test_markdown_text_conversion(
     text: str,
@@ -29,3 +57,46 @@ def test_markdown_text_conversion(
 ) -> None:
 
     assert threadvault.vault.markdown.convert(text, NAMES) == expected
+
+def test_markdown_message_export(
+    tmp_path: pathlib.Path
+) -> None:
+
+    messages = json.loads(locate('slack', 'messages.json').read_text(encoding = 'utf-8'))
+    render(tmp_path, messages, 'Asia/Tokyo', 'ja')
+    names = sorted(entry.name for entry in tmp_path.iterdir())
+
+    assert names == sorted(entry.name for entry in locate('vault', 'transcripts', 'general').iterdir())
+    for name in names: assert pathlib.Path(os.path.join(tmp_path, name)).read_bytes() == locate('vault', 'transcripts', 'general', name).read_bytes()
+
+def test_markdown_message_time(
+    tmp_path: pathlib.Path
+) -> None:
+
+    messages = json.loads(locate('slack', 'messages.json').read_text(encoding = 'utf-8'))
+    render(tmp_path, messages, 'UTC', 'en')
+    lines = pathlib.Path(os.path.join(tmp_path, '2017-11.md')).read_text(encoding = 'utf-8').splitlines()
+    reply = next(index for index, line in enumerate(lines) if line.startswith('####'))
+
+    assert lines.index('## 2017-11-17 (Fri)') < reply
+    assert lines[reply].startswith('#### [2026-10-04 00:00]')
+
+@pytest.mark.parametrize(('timezone', 'names'), MONTHS_SPLIT)
+def test_markdown_message_timezone(
+    tmp_path: pathlib.Path,
+    timezone: str,
+    names: list[str]
+) -> None:
+
+    render(tmp_path, [{'text': 'xxx', 'ts': '1698795000.000000', 'user': 'UXXX2'}], timezone, 'en')
+
+    assert [entry.name for entry in tmp_path.iterdir()] == names
+
+def test_markdown_reply_orphan(
+    tmp_path: pathlib.Path
+) -> None:
+
+    render(tmp_path, [{'text': 'xxx', 'thread_ts': '1700006399.000000', 'ts': '1700006400.000000', 'user': 'UXXX2'}], 'UTC', 'en')
+    lines = pathlib.Path(os.path.join(tmp_path, '2023-11.md')).read_text(encoding = 'utf-8').splitlines()
+
+    assert lines[4].startswith('### [00:00]')
