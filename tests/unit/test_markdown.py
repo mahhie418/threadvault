@@ -8,6 +8,7 @@ import pytest
 import threadvault.configuration
 import threadvault.vault.markdown
 
+DIRECTORIES = {'CXXX1': 'general', 'CXXX2': 'xxx'}
 NAMES = {'UXXX1': 'xxx1', 'CXXX1': 'general'}
 URL = 'https://xxx.slack.com/'
 
@@ -100,3 +101,23 @@ def test_markdown_reply_orphan(
     lines = pathlib.Path(os.path.join(tmp_path, '2023-11.md')).read_text(encoding = 'utf-8').splitlines()
 
     assert lines[4].startswith('### [00:00]')
+
+def test_markdown_index_japanese(
+    tmp_path: pathlib.Path
+) -> None:
+
+    channels = json.loads(locate('slack', 'conversations.list.json').read_text(encoding = 'utf-8'))
+    threadvault.vault.markdown.catalogue(tmp_path, channels, DIRECTORIES, timezone = 'Asia/Tokyo', language = 'ja')
+    file = pathlib.Path(os.path.join(tmp_path, 'transcripts', threadvault.vault.markdown.INDEX_FILE))
+
+    assert file.read_bytes() == locate('vault', 'transcripts', 'index.md').read_bytes()
+
+def test_markdown_index_english(
+    tmp_path: pathlib.Path
+) -> None:
+
+    channels = json.loads(locate('slack', 'conversations.list.json').read_text(encoding = 'utf-8'))
+    threadvault.vault.markdown.catalogue(tmp_path, channels, DIRECTORIES, timezone = 'UTC', language = 'en')
+    lines = pathlib.Path(os.path.join(tmp_path, 'transcripts', threadvault.vault.markdown.INDEX_FILE)).read_text(encoding = 'utf-8').splitlines()
+
+    assert lines[-4:] == ['## Channels', '', '- [#general](general/)', '- [#xxx](xxx/)']

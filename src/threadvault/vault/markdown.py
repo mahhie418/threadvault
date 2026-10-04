@@ -4,6 +4,7 @@ import collections
 import collections.abc
 import datetime
 import decimal
+import importlib.resources
 import itertools
 import os
 import pathlib
@@ -12,6 +13,13 @@ import typing
 import zoneinfo
 
 import threadvault.configuration
+import threadvault.product
+import threadvault.vault.export
+import threadvault.vault.state
+
+TRANSCRIPTS_DIRECTORY = 'transcripts'
+
+INDEX_FILE = 'index.md'
 
 _PATTERN_CONTENT = re.compile(r'(```.*?```|`[^`\n]*`|<[^<>\n]*>)', re.DOTALL)
 _PATTERN_BOLD = re.compile(r'(?<![A-Za-z0-9*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![A-Za-z0-9*])')
@@ -116,6 +124,47 @@ def transcribe(
         text = '\n'.join(lines)
 
         pathlib.Path(os.path.join(directory, f'{month}.md')).write_text(f'{text}\n', encoding = 'utf-8', newline = '\n')
+
+def catalogue(
+    vault: pathlib.Path,
+    channels: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],
+    directories: collections.abc.Mapping[str, str],
+    *,
+    timezone: str,
+    language: threadvault.configuration.Language
+) -> None:
+
+    """Writes the index of the Markdown files.
+
+    The index tells how the vault is laid out and which version of the
+    format it follows, and links to the Markdown of each channel.
+
+    Args:
+        vault: Root directory of the vault.
+        channels: Channels to list, as conversations.list returns them.
+        directories: Directory names by channel ID.
+        timezone: IANA time zone of the Markdown files.
+        language: Language of the index.
+    """
+
+    template = importlib.resources.files('threadvault.vault').joinpath('templates', f'index.{language}.md').read_text(encoding = 'utf-8')
+
+    introduction = template.format(
+        product = threadvault.product.NAME,
+        version = threadvault.vault.state.FORMAT_VERSION,
+        raw = threadvault.vault.export.RAW_DIRECTORY,
+        users = threadvault.vault.export.USERS_FILE,
+        channels = threadvault.vault.export.CHANNELS_FILE,
+        groups = threadvault.vault.export.GROUPS_FILE,
+        transcripts = TRANSCRIPTS_DIRECTORY,
+        timezone = timezone
+    )
+
+    entries = [f'- [#{channel['name']}]({directories[channel['id']]}/)' for channel in sorted(channels, key = lambda channel: channel['name'])]
+    text = '\n'.join([introduction, *entries])
+    path = pathlib.Path(os.path.join(vault, TRANSCRIPTS_DIRECTORY, INDEX_FILE))
+    path.parent.mkdir(exist_ok = True)
+    path.write_text(f'{text}\n', encoding = 'utf-8', newline = '\n')
 
 def _unescape(
     text: str

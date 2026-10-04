@@ -10,6 +10,8 @@ import os
 import pathlib
 import typing
 
+RAW_DIRECTORY = 'raw'
+
 USERS_FILE = 'users.json'
 CHANNELS_FILE = 'channels.json'
 GROUPS_FILE = 'groups.json'
