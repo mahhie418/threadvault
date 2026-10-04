@@ -1,0 +1,41 @@
+[
+  {
+    "deleted": true,
+    "id": "UXXX1",
+    "is_bot": false,
+    "name": "xxx1",
+    "profile": {
+      "avatar_hash": "xxx",
+      "display_name": "",
+      "real_name": "xxx",
+      "team": "TXXX"
+    },
+    "team_id": "TXXX"
+  },
+  {
+    "color": "000000",
+    "deleted": false,
+    "id": "UXXX2",
+    "is_admin": false,
+    "is_app_user": false,
+    "is_bot": false,
+    "is_owner": false,
+    "is_primary_owner": false,
+    "is_restricted": false,
+    "is_ultra_restricted": false,
+    "name": "xxx2",
+    "profile": {
+      "avatar_hash": "xxx",
+      "display_name": "テスト",
+      "first_name": "xxx",
+      "image_72": "https://xxx/xxx.png",
+      "last_name": "xxx",
+      "real_name": "xxx",
+      "team": "TXXX",
+      "title": "xxx"
+    },
+    "real_name": "xxx",
+    "team_id": "TXXX",
+    "tz": "Asia/Tokyo"
+  }
+]

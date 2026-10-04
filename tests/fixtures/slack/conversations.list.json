@@ -1,0 +1,58 @@
+[
+  {
+    "context_team_id": "TXXX",
+    "created": 1000000000,
+    "creator": "UXXX1",
+    "id": "CXXX2",
+    "is_archived": false,
+    "is_channel": true,
+    "is_ext_shared": false,
+    "is_general": false,
+    "is_member": true,
+    "is_private": true,
+    "name": "xxx",
+    "name_normalized": "xxx",
+    "num_members": 1,
+    "previous_names": [],
+    "purpose": {
+      "creator": "",
+      "last_set": 0,
+      "value": ""
+    },
+    "topic": {
+      "creator": "UXXX1",
+      "last_set": 1500000000,
+      "value": "xxx"
+    },
+    "updated": 2000000000
+  },
+  {
+    "context_team_id": "TXXX",
+    "created": 1000000000,
+    "creator": "UXXX2",
+    "id": "CXXX1",
+    "is_archived": false,
+    "is_channel": true,
+    "is_ext_shared": false,
+    "is_general": true,
+    "is_member": true,
+    "is_private": false,
+    "name": "general",
+    "name_normalized": "general",
+    "num_members": 2,
+    "previous_names": [
+      "xxx"
+    ],
+    "purpose": {
+      "creator": "UXXX2",
+      "last_set": 1500000000,
+      "value": "xxx"
+    },
+    "topic": {
+      "creator": "",
+      "last_set": 0,
+      "value": ""
+    },
+    "updated": 2000000000
+  }
+]

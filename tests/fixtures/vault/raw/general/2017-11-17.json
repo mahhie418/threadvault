@@ -1,0 +1,49 @@
+[
+  {
+    "edited": {
+      "ts": "1510880460.000000",
+      "user": "UXXX2"
+    },
+    "team": "TXXX",
+    "text": "xxx",
+    "ts": "1510880400.000000",
+    "type": "message",
+    "user": "UXXX2",
+    "user_profile": {
+      "avatar_hash": "xxx",
+      "display_name": "テスト",
+      "first_name": "xxx",
+      "image_72": "https://xxx/xxx.png",
+      "is_restricted": false,
+      "is_ultra_restricted": false,
+      "name": "xxx2",
+      "real_name": "xxx",
+      "team": "TXXX"
+    }
+  },
+  {
+    "latest_reply": "1791072000.000000",
+    "reply_count": 1,
+    "reply_users": [
+      "UXXX1"
+    ],
+    "reply_users_count": 1,
+    "team": "TXXX",
+    "text": "xxx",
+    "thread_ts": "1510963199.000000",
+    "ts": "1510963199.000000",
+    "type": "message",
+    "user": "UXXX2",
+    "user_profile": {
+      "avatar_hash": "xxx",
+      "display_name": "テスト",
+      "first_name": "xxx",
+      "image_72": "https://xxx/xxx.png",
+      "is_restricted": false,
+      "is_ultra_restricted": false,
+      "name": "xxx2",
+      "real_name": "xxx",
+      "team": "TXXX"
+    }
+  }
+]
