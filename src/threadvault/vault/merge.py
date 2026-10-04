@@ -2,9 +2,12 @@
 
 import collections.abc
 import dataclasses
+import datetime
 import decimal
 import itertools
 import typing
+
+DELETION_DAYS_MAXIMUM = 83
 
 @dataclasses.dataclass(frozen = True, slots = True, kw_only = True)
 class Outcome:
@@ -14,10 +17,13 @@ class Outcome:
     Attributes:
         messages: Every message that the vault keeps, in order of time.
         deleted: Messages that the vault held but Slack no longer has.
+        withheld: Messages that Slack no longer has but the vault keeps,
+                  because there were more deletions than allowed.
     """
 
     messages: list[dict[str, typing.Any]]
     deleted: list[dict[str, typing.Any]]
+    withheld: list[dict[str, typing.Any]]
 
 def merge(
     stored: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],
@@ -25,7 +31,9 @@ def merge(
     threads: collections.abc.Mapping[str, collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]]],
     *,
     oldest: str,
-    latest: str
+    latest: str,
+    now: datetime.datetime,
+    limit: int | None
 ) -> Outcome:
 
     """Merges messages fetched from Slack into the messages of a channel.
@@ -33,10 +41,11 @@ def merge(
     Each result from Slack is the whole truth only about what it covers. The
     history covers the messages posted from `oldest` to `latest` that are not
     thread replies; the replies of a thread cover that thread. A stored
-    message that a result covers but does not contain was deleted in Slack.
-    Every other stored message stays, such as a reply to an older thread that
-    was not fetched again. A fetched message replaces the stored message with
-    the same timestamp.
+    message that a result covers but does not contain was deleted in Slack,
+    unless it is older than `DELETION_DAYS_MAXIMUM` days. Every other stored
+    message stays, such as a reply to an older thread that was not fetched
+    again. A fetched message replaces the stored message with the same
+    timestamp. When there are more deletions than `limit`, none of them is made.
 
     Args:
         stored: Messages that the vault holds for the channel.
@@ -44,24 +53,30 @@ def merge(
         threads: Messages that conversations.replies returned, by thread timestamp.
         oldest: Timestamp of the oldest message that the history covers.
         latest: Timestamp of the latest message that the history covers.
+        now: The current time, which sets the age of the messages.
+        limit: Most deletions to make, or None for no limit.
+               0 keeps every message, as the first run needs.
 
     Returns:
-        The messages after the merge, and the deleted ones.
+        The messages after the merge, and the deleted and withheld ones.
     """
 
     fetched = {message['ts']: dict(message) for message in itertools.chain(history, *threads.values())}
     window = (decimal.Decimal(oldest), decimal.Decimal(latest))
+    deletable = decimal.Decimal((now - datetime.timedelta(days = DELETION_DAYS_MAXIMUM)).timestamp())
     unknown: dict[str, dict[str, typing.Any]] = {}
     deleted: list[dict[str, typing.Any]] = []
 
     for message in stored:
 
-        if not (covered := _cover(message, threads, window)): unknown[message['ts']] = dict(message)
+        if not (covered := _cover(message, threads, window) and decimal.Decimal(message['ts']) >= deletable): unknown[message['ts']] = dict(message)
         if covered and message['ts'] not in fetched: deleted.append(dict(message))
 
-    messages = sorted((unknown | fetched).values(), key = lambda message: decimal.Decimal(message['ts']))
+    deleted.sort(key = lambda message: decimal.Decimal(message['ts']))
+    withheld = deleted if limit is not None and len(deleted) > limit else []
+    messages = sorted((unknown | {message['ts']: message for message in withheld} | fetched).values(), key = lambda message: decimal.Decimal(message['ts']))
 
-    return Outcome(messages = messages, deleted = sorted(deleted, key = lambda message: decimal.Decimal(message['ts'])))
+    return Outcome(messages = messages, deleted = [] if withheld else deleted, withheld = withheld)
 
 def _cover(
     message: collections.abc.Mapping[str, typing.Any],
