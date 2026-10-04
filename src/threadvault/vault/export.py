@@ -1,6 +1,9 @@
 """Workspace data in the JSON format of Slack's own export."""
 
+import collections
 import collections.abc
+import datetime
+import decimal
 import json
 import operator
 import os
@@ -14,6 +17,9 @@ GROUPS_FILE = 'groups.json'
 _FIELDS_USER_EXCLUDED = frozenset({'tz_label', 'tz_offset', 'updated'})
 _FIELDS_PROFILE_EXCLUDED = frozenset({'huddle_state', 'huddle_state_expiration_ts', 'status_emoji', 'status_emoji_display_info', 'status_expiration', 'status_text', 'status_text_canonical'})
 _FIELDS_CHANNEL_INCLUDED = frozenset({'created', 'creator', 'id', 'is_archived', 'is_general', 'name', 'purpose', 'topic'})
+
+_FIELDS_MESSAGE_STATE_EXCLUDED = frozenset({'last_read', 'subscribed'})
+_FIELDS_MESSAGE_PROFILE_INCLUDED = frozenset({'avatar_hash', 'display_name', 'first_name', 'image_72', 'is_restricted', 'is_ultra_restricted', 'name', 'real_name', 'team'})
 
 def users(
     directory: pathlib.Path,
@@ -54,6 +60,44 @@ def channels(
     _write(pathlib.Path(os.path.join(directory, CHANNELS_FILE)), [entry for private, entry in entries if not private])
     _write(pathlib.Path(os.path.join(directory, GROUPS_FILE)), [entry for private, entry in entries if private])
 
+def messages(
+    directory: pathlib.Path,
+    messages: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],
+    users: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]]
+) -> None:
+
+    """Writes the messages of a channel to one file a day, as Slack's export does.
+
+    A message goes to the file of the UTC date of its timestamp, so a thread
+    reply sits in the file of the day it was posted. Each file holds the given
+    messages of its day in order of time and replaces the file that was there,
+    so give every message of each day. A message of a known user gets the
+    user_profile of Slack's export. Fields that describe the reader are left
+    out.
+
+    Args:
+        directory: Directory of the channel in the raw data.
+        messages: Messages of the channel, each once, as conversations.history
+                  and conversations.replies return them.
+        users: Users as users.list returns them.
+    """
+
+    profiles = {user['id']: _profile(user) for user in users}
+    days: dict[str, list[dict[str, typing.Any]]] = collections.defaultdict(list)
+
+    for message in sorted(messages, key = lambda message: decimal.Decimal(message['ts'])):
+
+        entry = _filter(message, _FIELDS_MESSAGE_STATE_EXCLUDED, action = 'exclude')
+        day = datetime.datetime.fromtimestamp(float(message['ts']), datetime.UTC).date().isoformat()
+
+        if message.get('user') in profiles: entry['user_profile'] = profiles[message['user']]
+
+        days[day].append(entry)
+
+    directory.mkdir(exist_ok = True)
+
+    for day, entries in days.items(): _write(pathlib.Path(os.path.join(directory, f'{day}.json')), entries)
+
 def _filter(
     mapping: collections.abc.Mapping[str, typing.Any],
     keys: collections.abc.Set[str],
@@ -62,6 +106,12 @@ def _filter(
 ) -> dict[str, typing.Any]:
 
     return {key: value for key, value in mapping.items() if (key in keys) == (action == 'include')}
+
+def _profile(
+    user: collections.abc.Mapping[str, typing.Any]
+) -> dict[str, typing.Any]:
+
+    return _filter({**user, **user.get('profile', {})}, _FIELDS_MESSAGE_PROFILE_INCLUDED, action = 'include')
 
 def _write(
     path: pathlib.Path,

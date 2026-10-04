@@ -29,3 +29,16 @@ def test_export_json_channels(
     threadvault.vault.export.channels(tmp_path, channels, members)
 
     for name in (threadvault.vault.export.CHANNELS_FILE, threadvault.vault.export.GROUPS_FILE): assert pathlib.Path(os.path.join(tmp_path, name)).read_bytes() == locate('vault', 'raw', name).read_bytes()
+
+def test_export_json_messages(
+    tmp_path: pathlib.Path
+) -> None:
+
+    messages = json.loads(locate('slack', 'messages.json').read_text(encoding = 'utf-8'))
+    users = json.loads(locate('slack', 'users.list.json').read_text(encoding = 'utf-8'))
+    directory = pathlib.Path(os.path.join(tmp_path, 'general'))
+    threadvault.vault.export.messages(directory, messages, users)
+    names = sorted(entry.name for entry in directory.iterdir())
+
+    assert names == sorted(entry.name for entry in locate('vault', 'raw', 'general').iterdir())
+    for name in names: assert pathlib.Path(os.path.join(directory, name)).read_bytes() == locate('vault', 'raw', 'general', name).read_bytes()
