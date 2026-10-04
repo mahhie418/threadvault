@@ -76,8 +76,9 @@ def transcribe(
     `timezone`, under a heading for its day. Thread replies follow their
     parent, whenever they were posted; a reply whose parent is not given
     stands on its own. Each message links to Slack. Each file holds the given
-    messages of its month and replaces the file that was there, so give every
-    message of each month and every reply of their threads.
+    messages of its month and replaces the file that was there, and the file
+    of a month without messages is removed, so give every message of the
+    channel.
 
     Args:
         directory: Directory of the channel among the Markdown files.
@@ -124,6 +125,10 @@ def transcribe(
         text = '\n'.join(lines)
 
         pathlib.Path(os.path.join(directory, f'{month}.md')).write_text(f'{text}\n', encoding = 'utf-8', newline = '\n')
+
+    stale = [path for path in directory.glob('*.md') if path.stem not in months]
+
+    for path in stale: path.unlink()
 
 def catalogue(
     vault: pathlib.Path,

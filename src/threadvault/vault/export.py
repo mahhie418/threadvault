@@ -73,9 +73,9 @@ def messages(
     A message goes to the file of the UTC date of its timestamp, so a thread
     reply sits in the file of the day it was posted. Each file holds the given
     messages of its day in order of time and replaces the file that was there,
-    so give every message of each day. A message of a known user gets the
-    user_profile of Slack's export. Fields that describe the reader are left
-    out.
+    and the file of a day without messages is removed, so give every message
+    of the channel. A message of a known user gets the user_profile of Slack's
+    export. Fields that describe the reader are left out.
 
     Args:
         directory: Directory of the channel in the raw data.
@@ -99,6 +99,10 @@ def messages(
     directory.mkdir(exist_ok = True)
 
     for day, entries in days.items(): _write(pathlib.Path(os.path.join(directory, f'{day}.json')), entries)
+
+    stale = [path for path in directory.glob('*.json') if path.stem not in days]
+
+    for path in stale: path.unlink()
 
 def _filter(
     mapping: collections.abc.Mapping[str, typing.Any],

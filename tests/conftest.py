@@ -35,18 +35,15 @@ class Slack(slack_sdk.web.WebClient):
 
         match api_method:
 
-            case 'users.list': key, entries = 'members', self.workspace['users']
-            case 'conversations.list': key, entries = 'channels', [channel for channel in self.workspace['channels'] if ('private_channel' if channel['is_private'] else 'public_channel') in types.split(',')]
-            case 'conversations.members': key, entries = 'members', self.workspace['members'][arguments['channel']]
-            case 'conversations.history': key, entries = 'messages', [message for message in reversed(messages) if message.get('thread_ts', message['ts']) == message['ts'] and within(message, arguments)]
-            case 'conversations.replies': key, entries = 'messages', [message for message in messages if message.get('thread_ts') == arguments['ts']]
+            case 'auth.test': data = {'url': self.workspace['url']}
+            case 'users.list': data = page('members', self.workspace['users'], arguments)
+            case 'conversations.list': data = page('channels', [channel for channel in self.workspace['channels'] if ('private_channel' if channel['is_private'] else 'public_channel') in types.split(',')], arguments)
+            case 'conversations.members': data = page('members', self.workspace['members'][arguments['channel']], arguments)
+            case 'conversations.history': data = page('messages', [message for message in reversed(messages) if message.get('thread_ts', message['ts']) == message['ts'] and within(message, arguments)], arguments)
+            case 'conversations.replies': data = page('messages', [message for message in messages if message.get('thread_ts') == arguments['ts']], arguments)
             case _: raise NotImplementedError(api_method)
 
-        offset = int(arguments.get('cursor', 0))
-        cursor = str(offset + 1) if offset + 1 < len(entries) else ''
-        body = {'ok': True, key: entries[offset:offset + 1], 'response_metadata': {'next_cursor': cursor}}
-
-        return slack_sdk.web.SlackResponse(client = self, http_verb = http_verb, api_url = api_method, req_args = {'params': arguments}, data = body, headers = {}, status_code = 200)
+        return slack_sdk.web.SlackResponse(client = self, http_verb = http_verb, api_url = api_method, req_args = {'params': arguments}, data = {'ok': True, **data}, headers = {}, status_code = 200)
 
 @pytest.fixture
 def workspace() -> dict[str, typing.Any]:
@@ -54,7 +51,7 @@ def workspace() -> dict[str, typing.Any]:
     directory = pathlib.Path(os.path.join(pathlib.Path(__file__).parent, 'fixtures', 'slack'))
     users, channels, members, messages = (json.loads(pathlib.Path(os.path.join(directory, name)).read_text(encoding = 'utf-8')) for name in ('users.list.json', 'conversations.list.json', 'conversations.members.json', 'messages.json'))
 
-    return {'users': users, 'channels': channels, 'members': members, 'messages': {'CXXX1': messages}}
+    return {'url': 'https://xxx.slack.com/', 'users': users, 'channels': channels, 'members': members, 'messages': {'CXXX1': messages}}
 
 @pytest.fixture
 def slack(
@@ -62,6 +59,17 @@ def slack(
 ) -> Slack:
 
     return Slack(workspace)
+
+def page(
+    key: str,
+    entries: list[typing.Any],
+    arguments: dict[str, typing.Any]
+) -> dict[str, typing.Any]:
+
+    offset = int(arguments.get('cursor', 0))
+    cursor = str(offset + 1) if offset + 1 < len(entries) else ''
+
+    return {key: entries[offset:offset + 1], 'response_metadata': {'next_cursor': cursor}}
 
 def within(
     message: dict[str, typing.Any],

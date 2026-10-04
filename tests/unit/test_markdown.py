@@ -82,6 +82,16 @@ def test_markdown_message_time(
     assert lines.index('## 2017-11-17 (Fri)') < reply
     assert lines[reply].startswith('#### [2026-10-04 00:00]')
 
+def test_markdown_message_removal(
+    tmp_path: pathlib.Path
+) -> None:
+
+    messages = json.loads(locate('slack', 'messages.json').read_text(encoding = 'utf-8'))
+    render(tmp_path, messages, 'Asia/Tokyo', 'ja')
+    render(tmp_path, [message for message in messages if message['ts'] in {'1510880400.000000', '1510963199.000000'}], 'Asia/Tokyo', 'ja')
+
+    assert [entry.name for entry in tmp_path.iterdir()] == ['2017-11.md']
+
 @pytest.mark.parametrize(('timezone', 'names'), MONTHS_SPLIT)
 def test_markdown_message_timezone(
     tmp_path: pathlib.Path,
