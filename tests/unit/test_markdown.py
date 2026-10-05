@@ -14,6 +14,12 @@ URL = 'https://xxx.slack.com/'
 
 MONTHS_SPLIT = [('Asia/Tokyo', ['2023-11.md']), ('UTC', ['2023-10.md'])]
 
+FILES_ATTACHED = [
+    {'id': 'FXXX1', 'name': 'xxx1.txt', 'permalink': 'https://xxx.slack.com/files/UXXX2/FXXX1/xxx1.txt'},
+    {'id': 'FXXX2', 'name': 'xxx 2.txt', 'permalink': 'https://xxx.slack.com/files/UXXX2/FXXX2/xxx_2.txt'},
+    {'id': 'FXXX3', 'mode': 'tombstone'}
+]
+
 TEXTS_CORRESPONDENCE = [
     ('xxx', 'xxx'),
     ('&lt;xxx&gt; &amp;lt;', '<xxx> &lt;'),
@@ -42,14 +48,15 @@ def render(
     directory: pathlib.Path,
     messages: list[dict[str, typing.Any]],
     timezone: str,
-    language: threadvault.configuration.Language
+    language: threadvault.configuration.Language,
+    attachments: dict[str, str] | None = None
 ) -> None:
 
     users = json.loads(locate('slack', 'users.list.json').read_text(encoding = 'utf-8'))
     channels = json.loads(locate('slack', 'conversations.list.json').read_text(encoding = 'utf-8'))
     channel = next(entry for entry in channels if entry['id'] == 'CXXX1')
 
-    threadvault.vault.markdown.transcribe(directory, channel, messages, users = users, channels = channels, url = URL, timezone = timezone, language = language)
+    threadvault.vault.markdown.transcribe(directory, channel, messages, users = users, channels = channels, attachments = attachments or {}, url = URL, timezone = timezone, language = language)
 
 @pytest.mark.parametrize(('text', 'expected'), TEXTS_CORRESPONDENCE)
 def test_markdown_text_conversion(
@@ -111,6 +118,15 @@ def test_markdown_reply_orphan(
     lines = pathlib.Path(os.path.join(tmp_path, '2023-11.md')).read_text(encoding = 'utf-8').splitlines()
 
     assert lines[4].startswith('### [00:00]')
+
+def test_markdown_file_link(
+    tmp_path: pathlib.Path
+) -> None:
+
+    render(tmp_path, [{'files': FILES_ATTACHED, 'text': '', 'ts': '1700006400.000000', 'user': 'UXXX2'}], 'UTC', 'en', {'FXXX2': 'attachments/2023-11/FXXX2/xxx 2.txt'})
+    lines = pathlib.Path(os.path.join(tmp_path, '2023-11.md')).read_text(encoding = 'utf-8').splitlines()
+
+    assert lines[-3:] == ['', '- [xxx1.txt](https://xxx.slack.com/files/UXXX2/FXXX1/xxx1.txt)', '- [xxx 2.txt](../../attachments/2023-11/FXXX2/xxx%202.txt)']
 
 def test_markdown_index_japanese(
     tmp_path: pathlib.Path

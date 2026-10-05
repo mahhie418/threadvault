@@ -5,6 +5,7 @@ import os
 import pathlib
 import typing
 
+import respx
 import slack_sdk
 
 import threadvault.backup.runner
@@ -20,6 +21,18 @@ MESSAGES_DELETION = {'1510880400.000000', '1791075600.000001'}
 THREAD_INSERTION = [
     {'latest_reply': '1791160200.000000', 'reply_count': 1, 'text': 'xxx', 'thread_ts': '1791158400.000000', 'ts': '1791158400.000000', 'type': 'message', 'user': 'UXXX1'},
     {'parent_user_id': 'UXXX1', 'text': 'xxx', 'thread_ts': '1791158400.000000', 'ts': '1791160200.000000', 'type': 'message', 'user': 'UXXX2'}
+]
+
+ATTACHMENT_CONTENT = [
+    {'created': 1791158400, 'id': 'FXXX1', 'mimetype': 'text/plain', 'mode': 'hosted', 'name': 'xxx.txt', 'permalink': 'https://xxx.slack.com/files/UXXX1/FXXX1/xxx.txt', 'size': 3, 'url_private_download': 'https://files.slack.com/xxx1'},
+    {'created': 1791158400, 'id': 'FXXX2', 'mimetype': 'text/plain', 'mode': 'hosted', 'name': 'xxx.txt', 'permalink': 'https://xxx.slack.com/files/UXXX1/FXXX2/xxx.txt', 'size': 3, 'url_private_download': 'https://files.slack.com/xxx2'},
+    {'created': 1791158400, 'id': 'FXXX3', 'mimetype': 'text/plain', 'mode': 'hosted', 'name': 'xxx.txt', 'permalink': 'https://xxx.slack.com/files/UXXX1/FXXX3/xxx.txt', 'size': 1024 * 1024 * 21, 'url_private_download': 'https://files.slack.com/xxx3'}
+]
+
+ATTACHMENT_LINK = [
+    '- [xxx.txt](../../attachments/2026-10/FXXX1/xxx.txt)',
+    '- [xxx.txt](https://xxx.slack.com/files/UXXX1/FXXX2/xxx.txt)',
+    '- [xxx.txt](https://xxx.slack.com/files/UXXX1/FXXX3/xxx.txt)'
 ]
 
 FILES_EXPECTED = [
@@ -93,7 +106,7 @@ def test_runner_vault_update(
     assert [message['ts'] for message in read(tmp_path, 'general', '2017-11-17.json')] == ['1510880400.000000', '1510963199.000000']
     assert [(message['ts'], message['text']) for message in read(tmp_path, 'general', '2026-10-04.json')] == [('1791072000.000000', 'xxx'), ('1791075600.000000', 'xxx2')]
     assert [message['ts'] for message in read(tmp_path, 'general', '2026-10-05.json')] == ['1791158400.000000', '1791160200.000000']
-    assert results[1] == threadvault.backup.runner.Result(channel = 'CXXX1', directory = 'general', messages = 6, deleted = 1, withheld = 0)
+    assert results[1] == threadvault.backup.runner.Result(channel = 'CXXX1', directory = 'general', messages = 6, deleted = 1, withheld = 0, files = 0, failures = 0)
     assert 'xxx2' in transcript
     assert 'p1791075600000001' not in transcript
 
@@ -127,7 +140,7 @@ def test_runner_vault_state(
 
     results = run(slack, tmp_path)
 
-    assert results[1] == threadvault.backup.runner.Result(channel = 'CXXX1', directory = 'general', messages = 5, deleted = 0, withheld = 1)
+    assert results[1] == threadvault.backup.runner.Result(channel = 'CXXX1', directory = 'general', messages = 5, deleted = 0, withheld = 1, files = 0, failures = 0)
 
 def test_runner_vault_rename(
     tmp_path: pathlib.Path,
@@ -159,7 +172,7 @@ def test_runner_vault_addition(
 
     results = run(slack, tmp_path)
 
-    assert results[1] == threadvault.backup.runner.Result(channel = 'CXXX1', directory = 'general', messages = 5, deleted = 0, withheld = 0)
+    assert results[1] == threadvault.backup.runner.Result(channel = 'CXXX1', directory = 'general', messages = 5, deleted = 0, withheld = 0, files = 0, failures = 0)
 
 def test_runner_vault_selection(
     tmp_path: pathlib.Path,
@@ -172,3 +185,34 @@ def test_runner_vault_selection(
     assert [channel['id'] for channel in read(tmp_path, 'groups.json')] == ['CXXX2']
     assert read(tmp_path, 'channels.json') == []
     assert threadvault.vault.state.load(tmp_path) == {'CXXX2': 'xxx'}
+
+def test_runner_vault_attachment(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    workspace['messages']['CXXX1'] += [{'files': ATTACHMENT_CONTENT, 'text': '', 'ts': '1791158400.000000', 'type': 'message', 'user': 'UXXX1'}]
+    transcript = pathlib.Path(os.path.join(tmp_path, 'transcripts', 'general', '2026-10.md'))
+
+    with respx.mock: results = run(slack, tmp_path, dataclasses.replace(SETTINGS, attachments_enabled = False))
+
+    assert (results[1].files, results[1].failures) == (0, 0)
+    assert transcript.read_text(encoding = 'utf-8').splitlines()[-3:] == [f'- [xxx.txt]({file['permalink']})' for file in ATTACHMENT_CONTENT]
+
+    with respx.mock:
+
+        respx.get('https://files.slack.com/xxx1').respond(200, content = b'xxx', headers = {'content-type': 'text/plain'})
+        respx.get('https://files.slack.com/xxx2').respond(200, content = b'xxx', headers = {'content-type': 'text/html'})
+        results = run(slack, tmp_path)
+
+    assert (results[1].files, results[1].failures) == (1, 1)
+    assert survey(pathlib.Path(os.path.join(tmp_path, 'attachments'))) == ['2026-10/FXXX1/xxx.txt']
+    assert transcript.read_text(encoding = 'utf-8').splitlines()[-3:] == ATTACHMENT_LINK
+
+    with respx.mock:
+
+        respx.get('https://files.slack.com/xxx2').respond(200, content = b'xxx', headers = {'content-type': 'text/html'})
+        results = run(slack, tmp_path)
+
+    assert (results[1].files, results[1].failures) == (0, 1)

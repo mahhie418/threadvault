@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.14"
 dependencies = [
     "cryptography>=50.0.2",
+    "httpx>=0.28.1",
     "platformdirs>=4.12.2",
     "python-dotenv>=1.2.4",
     "slack-sdk>=3.45.0",
@@ -26,6 +27,7 @@ build-backend = "uv_build"
 dev = [
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
+    "respx>=0.23.1",
     "ruff>=0.16.10",
     "ty>=0.0.84",
 ]

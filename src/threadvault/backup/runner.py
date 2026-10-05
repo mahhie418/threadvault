@@ -3,7 +3,9 @@
 import collections.abc
 import dataclasses
 import datetime
+import itertools
 import json
+import logging
 import os
 import pathlib
 import typing
@@ -14,10 +16,13 @@ import threadvault.backup.fetch
 import threadvault.customisation
 import threadvault.slack.api
 import threadvault.vault.export
+import threadvault.vault.files
 import threadvault.vault.layout
 import threadvault.vault.markdown
 import threadvault.vault.merge
 import threadvault.vault.state
+
+_LOGGER = logging.getLogger(__name__)
 
 @dataclasses.dataclass(frozen = True, slots = True, kw_only = True)
 class Result:
@@ -31,6 +36,8 @@ class Result:
         deleted: Number of messages deleted because Slack no longer has them.
         withheld: Number of messages that Slack no longer has but the vault
                   keeps, because the run would have deleted too many.
+        files: Number of attached files that the run saved.
+        failures: Number of attached files that the run could not save.
     """
 
     channel: str
@@ -38,6 +45,8 @@ class Result:
     messages: int
     deleted: int
     withheld: int
+    files: int
+    failures: int
 
 def run(
     client: slack_sdk.web.WebClient,
@@ -58,7 +67,10 @@ def run(
     A renamed channel first moves to the directory of its new name. The vault
     then gets the users and the channels, the messages of each channel as
     Slack's export writes them, the Markdown of each channel and its index,
-    and the state file.
+    and the state file. When the settings enable attachments, the attached
+    files of the messages that the run fetched are saved too, up to the size
+    limit of the settings; a file that cannot be saved is tried again when
+    its message is fetched again.
 
     Args:
         client: Slack client for the workspace.
@@ -102,18 +114,42 @@ def run(
         history = threadvault.slack.api.history(client, channel['id'], oldest = oldest, latest = latest)
         threads = {thread_ts: threadvault.slack.api.replies(client, channel['id'], thread_ts) for thread_ts in threadvault.backup.fetch.threads(history, stored)}
         outcome = threadvault.vault.merge.merge(stored, history, threads, oldest = oldest, latest = latest, now = now, limit = limit if known else 0)
+        saved, failed = _download(client, vault, itertools.chain(history, *threads.values()), settings.attachment_size_maximum * 1024 * 1024) if settings.attachments_enabled else (0, 0)
+        paths = {file['id']: threadvault.vault.files.locate(file) for file in threadvault.vault.files.select(outcome.messages)}
+        attachments = {file_id: path for file_id, path in paths.items() if pathlib.Path(os.path.join(vault, path)).is_file()}
 
         threadvault.vault.export.messages(pathlib.Path(os.path.join(raw, directory)), outcome.messages, users)
-        threadvault.vault.markdown.transcribe(pathlib.Path(os.path.join(transcripts, directory)), channel, outcome.messages, users = users, channels = channels, url = url, timezone = settings.workspace_timezone, language = settings.markdown_language)
+        threadvault.vault.markdown.transcribe(pathlib.Path(os.path.join(transcripts, directory)), channel, outcome.messages, users = users, channels = channels, attachments = attachments, url = url, timezone = settings.workspace_timezone, language = settings.markdown_language)
 
         if limit is not None: limit -= len(outcome.deleted)
 
-        results.append(Result(channel = channel['id'], directory = directory, messages = len(outcome.messages), deleted = len(outcome.deleted), withheld = len(outcome.withheld)))
+        results.append(Result(channel = channel['id'], directory = directory, messages = len(outcome.messages), deleted = len(outcome.deleted), withheld = len(outcome.withheld), files = saved, failures = failed))
 
     threadvault.vault.markdown.catalogue(vault, targets, directories, timezone = settings.workspace_timezone, language = settings.markdown_language)
     threadvault.vault.state.save(vault, directories)
 
     return results
+
+def _download(
+    client: slack_sdk.web.WebClient,
+    vault: pathlib.Path,
+    messages: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],
+    limit: int
+) -> tuple[int, int]:
+
+    saved, failed = 0, 0
+
+    for file in threadvault.vault.files.select(messages):
+
+        path = pathlib.Path(os.path.join(vault, threadvault.vault.files.locate(file)))
+
+        if path.is_file() or file.get('size', 0) > limit: continue
+
+        try: threadvault.slack.api.download(client, file, path, limit = limit)
+        except threadvault.slack.api.DownloadError as error: _LOGGER.warning('Attached file not saved: %s', error); failed += 1
+        else: saved += 1
+
+    return saved, failed
 
 def _move(
     parents: collections.abc.Iterable[pathlib.Path],

@@ -10,7 +10,7 @@ import threadvault.slack.api
 import threadvault.terminal
 
 TOKENS_BACKUP = [
-    ('xoxb-xxx', 0, 'xxx: 0 messages, 0 deleted, 0 withheld\ngeneral: 5 messages, 0 deleted, 0 withheld\n', ''),
+    ('xoxb-xxx', 0, 'xxx: 0 messages, 0 deleted, 0 withheld, 0 files, 0 failures\ngeneral: 5 messages, 0 deleted, 0 withheld, 0 files, 0 failures\n', ''),
     ('', 1, '', 'error: Missing required environment variables: SLACK_BOT_TOKEN\n')
 ]
 

@@ -77,6 +77,6 @@ def _backup_now(
 
         return 1
 
-    for result in results: print(f'{result.directory}: {result.messages} messages, {result.deleted} deleted, {result.withheld} withheld')
+    for result in results: print(f'{result.directory}: {result.messages} messages, {result.deleted} deleted, {result.withheld} withheld, {result.files} files, {result.failures} failures')
 
     return 0

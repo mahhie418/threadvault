@@ -1,14 +1,21 @@
-"""Slack Web API calls of the backup, with pagination and retries."""
+"""Calls to Slack for the backup: the Web API, with pagination and retries, and file downloads."""
 
 import collections.abc
+import pathlib
 import typing
 
+import httpx
 import slack_sdk
 import slack_sdk.http_retry
 
 PAGE_SIZE = 200
 
+TIMEOUT_LIMIT = 30.
 RETRY_LIMIT = 5
+
+class DownloadError(Exception):
+
+    """Raised when an attached file cannot be downloaded from Slack."""
 
 def connect(
     token: str
@@ -144,6 +151,62 @@ def replies(
     """
 
     return _paginate(client.conversations_replies, 'messages', channel = channel, ts = thread_ts)
+
+def download(
+    client: slack_sdk.web.WebClient,
+    file: collections.abc.Mapping[str, typing.Any],
+    path: pathlib.Path,
+    *,
+    limit: int
+) -> None:
+
+    """Downloads an attached file, bit by bit.
+
+    The file is written next to `path` and moves there only when it is
+    complete, so that a failure leaves nothing behind. A web page in place of
+    a file that is not one means that Slack refused the token.
+
+    Args:
+        client: Slack client for the workspace, whose token the download uses.
+        file: The file as Slack describes it in a message.
+        path: Where to save the file. Missing parent directories are created.
+        limit: Largest size of the file to accept, in bytes.
+
+    Raises:
+        DownloadError: Slack answered with an error or a web page, the file is
+                       larger than `limit`, or the connection failed.
+    """
+
+    path.parent.mkdir(parents = True, exist_ok = True)
+    temporary = path.with_name(f'{path.name}.tmp')
+
+    try:
+
+        with httpx.stream('GET', file['url_private_download'], headers = {'Authorization': f'Bearer {client.token}'}, follow_redirects = True, timeout = TIMEOUT_LIMIT) as response:
+
+            received: str = response.headers.get('content-type', '')
+            expected: str = file.get('mimetype', '')
+
+            if response.is_error: raise DownloadError(f'Slack answered {response.status_code} for file {file['id']}')
+            if received.startswith('text/html') and not expected.startswith('text/html'): raise DownloadError(f'Slack sent a web page instead of file {file['id']}')
+
+            with temporary.open('wb') as stream:
+
+                for chunk in response.iter_bytes():
+
+                    if stream.tell() + len(chunk) > limit: raise DownloadError(f'File {file['id']} is larger than {limit} bytes')
+
+                    stream.write(chunk)
+
+    except BaseException as error:
+
+        temporary.unlink(missing_ok = True)
+
+        if isinstance(error, httpx.HTTPError): raise DownloadError(f'File {file['id']} could not be downloaded: {error}') from error
+
+        raise
+
+    temporary.replace(path)
 
 def _paginate(
     method: collections.abc.Callable[..., slack_sdk.web.SlackResponse],
