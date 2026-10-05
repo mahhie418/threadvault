@@ -5,11 +5,13 @@ import os
 import pathlib
 import typing
 
+import pytest
 import respx
 import slack_sdk
 
 import threadvault.backup.runner
 import threadvault.customisation
+import threadvault.slack.api
 import threadvault.vault.state
 
 NOW = datetime.datetime(2026, 10, 5, 1, 0, tzinfo = datetime.UTC)
@@ -216,3 +218,29 @@ def test_runner_vault_attachment(
         results = run(slack, tmp_path)
 
     assert (results[1].files, results[1].failures) == (0, 1)
+
+def test_runner_vault_interruption(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    history = threadvault.slack.api.history
+
+    def interrupt(
+        client: slack_sdk.web.WebClient,
+        channel: str,
+        *,
+        oldest: str,
+        latest: str
+    ) -> list[dict[str, typing.Any]]:
+
+        if channel == 'CXXX1': raise ConnectionError
+
+        return history(client, channel, oldest = oldest, latest = latest)
+
+    monkeypatch.setattr(threadvault.slack.api, 'history', interrupt)
+
+    with pytest.raises(ConnectionError): run(slack, tmp_path)
+
+    assert threadvault.vault.state.load(tmp_path) == {'CXXX2': 'xxx'}

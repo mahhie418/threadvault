@@ -70,7 +70,9 @@ def run(
     and the state file. When the settings enable attachments, the attached
     files of the messages that the run fetched are saved too, up to the size
     limit of the settings; a file that cannot be saved is tried again when
-    its message is fetched again.
+    its message is fetched again. A channel fetched in full joins the state
+    file as soon as it is written, so that a run that stops part way does not
+    fetch it in full again.
 
     Args:
         client: Slack client for the workspace.
@@ -97,6 +99,7 @@ def run(
     directories = threadvault.vault.layout.assign({channel['id']: channel['name'] for channel in targets}, previous)
     raw = pathlib.Path(os.path.join(vault, threadvault.vault.export.RAW_DIRECTORY))
     transcripts = pathlib.Path(os.path.join(vault, threadvault.vault.markdown.TRANSCRIPTS_DIRECTORY))
+    progress = {channel: directory for channel, directory in directories.items() if channel in previous}
     results: list[Result] = []
 
     _move((raw, transcripts), previous, directories)
@@ -124,6 +127,11 @@ def run(
         if limit is not None: limit -= len(outcome.deleted)
 
         results.append(Result(channel = channel['id'], directory = directory, messages = len(outcome.messages), deleted = len(outcome.deleted), withheld = len(outcome.withheld), files = saved, failures = failed))
+
+        if known: continue
+
+        progress[channel['id']] = directory
+        threadvault.vault.state.save(vault, progress)
 
     threadvault.vault.markdown.catalogue(vault, targets, directories, timezone = settings.workspace_timezone, language = settings.markdown_language)
     threadvault.vault.state.save(vault, directories)
