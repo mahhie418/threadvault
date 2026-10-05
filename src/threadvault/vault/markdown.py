@@ -10,11 +10,13 @@ import os
 import pathlib
 import re
 import typing
+import urllib.parse
 import zoneinfo
 
 import threadvault.configuration
 import threadvault.product
 import threadvault.vault.export
+import threadvault.vault.files
 import threadvault.vault.state
 
 TRANSCRIPTS_DIRECTORY = 'transcripts'
@@ -65,6 +67,7 @@ def transcribe(
     *,
     users: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],
     channels: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],
+    attachments: collections.abc.Mapping[str, str],
     url: str,
     timezone: str,
     language: threadvault.configuration.Language
@@ -75,9 +78,11 @@ def transcribe(
     A message goes to the file of the month in which it was posted, in
     `timezone`, under a heading for its day. Thread replies follow their
     parent, whenever they were posted; a reply whose parent is not given
-    stands on its own. Each message links to Slack. Each file holds the given
-    messages of its month and replaces the file that was there, so give every
-    message of each month and every reply of their threads.
+    stands on its own. Each message links to Slack, and so does each of its
+    attached files, unless the vault holds a copy to link to instead. Each
+    file holds the given messages of its month and replaces the file that was
+    there, and the file of a month without messages is removed, so give every
+    message of the channel.
 
     Args:
         directory: Directory of the channel among the Markdown files.
@@ -86,6 +91,8 @@ def transcribe(
                   and conversations.replies return them.
         users: Users as users.list returns them.
         channels: Channels as conversations.list returns them, for mentions.
+        attachments: Paths in the vault of the attached files that it holds,
+                     by file ID.
         url: Address of the workspace, as auth.test returns it.
         timezone: IANA time zone for the months, days and times.
         language: Language of the day headings.
@@ -117,13 +124,17 @@ def transcribe(
 
             for parent in group:
 
-                lines += _render(parent, '###', day, channel['id'], url, zone, names)
+                lines += _render(parent, '###', day, channel['id'], url, zone, names, attachments)
 
-                for reply in replies[parent['ts']]: lines += _render(reply, '####', day, channel['id'], url, zone, names)
+                for reply in replies[parent['ts']]: lines += _render(reply, '####', day, channel['id'], url, zone, names, attachments)
 
         text = '\n'.join(lines)
 
         pathlib.Path(os.path.join(directory, f'{month}.md')).write_text(f'{text}\n', encoding = 'utf-8', newline = '\n')
+
+    stale = [path for path in directory.glob('*.md') if path.stem not in months]
+
+    for path in stale: path.unlink()
 
 def catalogue(
     vault: pathlib.Path,
@@ -157,6 +168,7 @@ def catalogue(
         channels = threadvault.vault.export.CHANNELS_FILE,
         groups = threadvault.vault.export.GROUPS_FILE,
         transcripts = TRANSCRIPTS_DIRECTORY,
+        attachments = threadvault.vault.files.ATTACHMENTS_DIRECTORY,
         timezone = timezone
     )
 
@@ -219,7 +231,8 @@ def _render(
     channel: str,
     url: str,
     zone: zoneinfo.ZoneInfo,
-    names: collections.abc.Mapping[str, str]
+    names: collections.abc.Mapping[str, str],
+    attachments: collections.abc.Mapping[str, str]
 ) -> list[str]:
 
     time = _localise(message, zone)
@@ -227,7 +240,17 @@ def _render(
     link = f'{url.rstrip('/')}/archives/{channel}/p{typing.cast(str, message['ts']).replace('.', '')}'
     author = names.get(message.get('user', '')) or message.get('username') or message.get('user') or message.get('bot_id', '')
     text = convert(message.get('text', ''), names)
+    files = [_attach(file, attachments) for file in message.get('files', []) if 'name' in file]
 
     if message.get('thread_ts', message['ts']) != message['ts']: link += f'?thread_ts={message['thread_ts']}&cid={channel}'
 
-    return ['', f'{marks} [{label}]({link}) {author}'] + (['', text] if text else [])
+    return ['', f'{marks} [{label}]({link}) {author}'] + (['', text] if text else []) + (['', *files] if files else [])
+
+def _attach(
+    file: collections.abc.Mapping[str, typing.Any],
+    attachments: collections.abc.Mapping[str, str]
+) -> str:
+
+    if file['id'] in attachments: return f'- [{file['name']}](../../{urllib.parse.quote(attachments[file['id']])})'
+
+    return f'- [{file['name']}]({file['permalink']})' if 'permalink' in file else f'- {file['name']}'

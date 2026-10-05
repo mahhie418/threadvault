@@ -42,3 +42,14 @@ def test_export_json_messages(
 
     assert names == sorted(entry.name for entry in locate('vault', 'raw', 'general').iterdir())
     for name in names: assert pathlib.Path(os.path.join(directory, name)).read_bytes() == locate('vault', 'raw', 'general', name).read_bytes()
+
+def test_export_json_deletion(
+    tmp_path: pathlib.Path
+) -> None:
+
+    messages = json.loads(locate('slack', 'messages.json').read_text(encoding = 'utf-8'))
+    users = json.loads(locate('slack', 'users.list.json').read_text(encoding = 'utf-8'))
+    threadvault.vault.export.messages(tmp_path, messages, users)
+    threadvault.vault.export.messages(tmp_path, [message for message in messages if message['ts'] in {'1510880400.000000', '1510963199.000000'}], users)
+
+    assert [entry.name for entry in tmp_path.iterdir()] == ['2017-11-17.json']
