@@ -2,6 +2,7 @@
 
 import argparse
 import datetime
+import os
 import pathlib
 import sys
 
@@ -11,8 +12,12 @@ import threadvault.backup.runner
 import threadvault.configuration
 import threadvault.customisation
 import threadvault.encryption
+import threadvault.github.oauth
+import threadvault.github.rest
+import threadvault.github.token
 import threadvault.product
 import threadvault.slack.api
+import threadvault.storage
 import threadvault.vault.state
 
 def main(
@@ -49,6 +54,8 @@ def _build() -> argparse.ArgumentParser:
     backup = commands.add_parser('backup-now', help = 'back up the workspace once into a local directory')
     backup.add_argument('--out', type = pathlib.Path, required = True, help = 'directory of the vault', metavar = 'DIR')
     backup.set_defaults(handler = _backup_now)
+    login = commands.add_parser('github-login', help = 'connect GitHub with the device flow of the GitHub App')
+    login.set_defaults(handler = _github_login)
 
     return parser
 
@@ -78,5 +85,36 @@ def _backup_now(
         return 1
 
     for result in results: print(f'{result.directory}: {result.messages} messages, {result.deleted} deleted, {result.withheld} withheld, {result.files} files, {result.failures} failures')
+
+    return 0
+
+def _github_login(
+    _: argparse.Namespace
+) -> int:
+
+    try:
+
+        settings = threadvault.configuration.load()
+        settings.require('github_app_client_id')
+        cipher = threadvault.encryption.SecretCipher(threadvault.encryption.load(settings.threadvault_secret_key, settings.threadvault_data_directory))
+        code = threadvault.github.oauth.request(settings.github_app_client_id)
+
+        print(f'Open {code.verification_uri} and enter {code.user_code}', flush = True)
+
+        tokens = threadvault.github.oauth.poll(settings.github_app_client_id, code)
+        database = threadvault.storage.Database(pathlib.Path(os.path.join(settings.threadvault_data_directory, threadvault.storage.DATABASE_FILE)))
+
+        try: threadvault.github.token.TokenManager(database, cipher, settings.github_app_client_id).save(tokens)
+        finally: database.close()
+
+        login = threadvault.github.rest.user(tokens.access_token)['login']
+
+    except (threadvault.configuration.ConfigurationError, threadvault.encryption.SecretKeyError, threadvault.storage.DatabaseError, threadvault.github.oauth.OAuthError, threadvault.github.rest.GitHubError) as error:
+
+        print(f'error: {error}', file = sys.stderr)
+
+        return 1
+
+    print(f'Connected to GitHub as {login}')
 
     return 0
