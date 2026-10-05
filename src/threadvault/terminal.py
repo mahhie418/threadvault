@@ -18,6 +18,7 @@ import threadvault.github.token
 import threadvault.product
 import threadvault.slack.api
 import threadvault.storage
+import threadvault.vault.repository
 import threadvault.vault.state
 
 def main(
@@ -51,9 +52,11 @@ def _build() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(title = 'commands', metavar = '<command>', required = True)
     encryption = commands.add_parser('generate-key', help = 'print a new key for THREADVAULT_SECRET_KEY')
     encryption.set_defaults(handler = _generate_key)
-    backup = commands.add_parser('backup-now', help = 'back up the workspace once into a local directory')
-    backup.add_argument('--out', type = pathlib.Path, required = True, help = 'directory of the vault', metavar = 'DIR')
+    backup = commands.add_parser('backup-now', help = 'back up the workspace once, into a local directory or a GitHub repository')
     backup.set_defaults(handler = _backup_now)
+    destination = backup.add_mutually_exclusive_group(required = True)
+    destination.add_argument('--out', type = pathlib.Path, help = 'directory of the vault', metavar = 'DIR')
+    destination.add_argument('--repo', help = 'GitHub repository of the vault, created as private when missing', metavar = 'OWNER/NAME')
     login = commands.add_parser('github-login', help = 'connect GitHub with the device flow of the GitHub App')
     login.set_defaults(handler = _github_login)
 
@@ -71,14 +74,33 @@ def _backup_now(
     namespace: argparse.Namespace
 ) -> int:
 
+    now = datetime.datetime.now(datetime.UTC)
+
     try:
 
         settings = threadvault.configuration.load()
-        settings.require('slack_bot_token')
-        client = threadvault.slack.api.connect(settings.slack_bot_token)
-        results = threadvault.backup.runner.run(client, namespace.out, threadvault.customisation.Settings(), days = settings.threadvault_lookback_days, limit = settings.threadvault_deletions_maximum, now = datetime.datetime.now(datetime.UTC))
 
-    except (threadvault.configuration.ConfigurationError, threadvault.vault.state.StateError, slack_sdk.errors.SlackApiError) as error:
+        if namespace.repo is None: settings.require('slack_bot_token')
+        else: settings.require('slack_bot_token', 'github_app_client_id')
+
+        workspace = threadvault.customisation.Settings(repository_name = namespace.repo)
+        client = threadvault.slack.api.connect(settings.slack_bot_token)
+
+        if namespace.repo is None:
+
+            results = threadvault.backup.runner.run(client, namespace.out, workspace, days = settings.threadvault_lookback_days, limit = settings.threadvault_deletions_maximum, now = now)
+
+        else:
+
+            cipher = threadvault.encryption.SecretCipher(threadvault.encryption.load(settings.threadvault_secret_key, settings.threadvault_data_directory))
+            database = threadvault.storage.Database(pathlib.Path(os.path.join(settings.threadvault_data_directory, threadvault.storage.DATABASE_FILE)))
+            manager = threadvault.github.token.TokenManager(database, cipher, settings.github_app_client_id)
+            directory = pathlib.Path(os.path.join(settings.threadvault_data_directory, 'vaults', *namespace.repo.split('/')))
+
+            try: results = threadvault.backup.runner.publish(client, workspace, directory = directory, full_name = namespace.repo, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = settings.threadvault_lookback_days, limit = settings.threadvault_deletions_maximum, now = now)
+            finally: database.close()
+
+    except (threadvault.configuration.ConfigurationError, threadvault.customisation.SettingInvalidError, threadvault.encryption.SecretKeyError, threadvault.storage.DatabaseError, threadvault.vault.state.StateError, threadvault.vault.repository.GitError, threadvault.github.token.TokenError, threadvault.github.rest.GitHubError, threadvault.backup.runner.VaultError, slack_sdk.errors.SlackApiError) as error:
 
         print(f'error: {error}', file = sys.stderr)
 

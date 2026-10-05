@@ -21,6 +21,7 @@ import threadvault.vault.state
 
 TRANSCRIPTS_DIRECTORY = 'transcripts'
 
+README_FILE = 'README.md'
 INDEX_FILE = 'index.md'
 
 _PATTERN_CONTENT = re.compile(r'(```.*?```|`[^`\n]*`|<[^<>\n]*>)', re.DOTALL)
@@ -177,6 +178,32 @@ def catalogue(
     path = pathlib.Path(os.path.join(vault, TRANSCRIPTS_DIRECTORY, INDEX_FILE))
     path.parent.mkdir(exist_ok = True)
     path.write_text(f'{text}\n', encoding = 'utf-8', newline = '\n')
+
+def introduce(
+    vault: pathlib.Path,
+    name: str,
+    *,
+    language: threadvault.configuration.Language
+) -> None:
+
+    """Writes the README of the vault, unless the vault has one of its own.
+
+    The README that GitHub puts into a new repository, a heading with the
+    name of the repository, is replaced; any other README is kept.
+
+    Args:
+        vault: Root directory of the vault.
+        name: Name of the repository of the vault.
+        language: Language of the README.
+    """
+
+    path = pathlib.Path(os.path.join(vault, README_FILE))
+
+    if path.exists() and path.read_text(encoding = 'utf-8').strip() != f'# {name}': return
+
+    template = importlib.resources.files('threadvault.vault').joinpath('templates', f'readme.{language}.md').read_text(encoding = 'utf-8')
+
+    path.write_text(template.format(product = threadvault.product.NAME, transcripts = TRANSCRIPTS_DIRECTORY, index = INDEX_FILE), encoding = 'utf-8', newline = '\n')
 
 def _unescape(
     text: str
