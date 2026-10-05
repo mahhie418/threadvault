@@ -46,7 +46,7 @@ def test_layout_name_empty() -> None:
 
     assert threadvault.vault.layout.assign({'CXXX': ''}, {}) == {'CXXX': 'CXXX'}
 
-def test_layout_names_confliction() -> None:
+def test_layout_name_confliction() -> None:
 
     channels = {'CXXX1': 'xxx', 'CXXX2': 'XXX', 'CXXX3': 'xxx-cxxx1', 'CXXX4': 'xxx-xxx'}
     expected = {'CXXX1': 'xxx-CXXX1', 'CXXX2': 'XXX-CXXX2', 'CXXX3': 'xxx-cxxx1-CXXX3', 'CXXX4': 'xxx-xxx'}
