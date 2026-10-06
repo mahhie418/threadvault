@@ -1,4 +1,4 @@
-"""One run that backs up the workspace into a vault directory."""
+"""One run that backs up the workspace into a vault directory, or into its vault on GitHub."""
 
 import collections.abc
 import dataclasses
@@ -13,16 +13,27 @@ import typing
 import slack_sdk
 
 import threadvault.backup.fetch
+import threadvault.configuration
 import threadvault.customisation
+import threadvault.github.rest
+import threadvault.product
 import threadvault.slack.api
 import threadvault.vault.export
 import threadvault.vault.files
 import threadvault.vault.layout
 import threadvault.vault.markdown
 import threadvault.vault.merge
+import threadvault.vault.repository
 import threadvault.vault.state
 
+ATTRIBUTES_FILE = '.gitattributes'
+_ATTRIBUTES_CONTENT = '*.json text eol=lf\n*.md text eol=lf\n'
+
 _LOGGER = logging.getLogger(__name__)
+
+class VaultError(Exception):
+
+    """Raised when the repository of the vault must not receive the backup, because it is public or gone."""
 
 @dataclasses.dataclass(frozen = True, slots = True, kw_only = True)
 class Result:
@@ -55,7 +66,8 @@ def run(
     *,
     days: int,
     limit: int | None,
-    now: datetime.datetime
+    now: datetime.datetime,
+    checkpoint: collections.abc.Callable[[Result], None] | None = None
 ) -> list[Result]:
 
     """Backs up the workspace into a vault directory.
@@ -70,7 +82,9 @@ def run(
     and the state file. When the settings enable attachments, the attached
     files of the messages that the run fetched are saved too, up to the size
     limit of the settings; a file that cannot be saved is tried again when
-    its message is fetched again.
+    its message is fetched again. A channel fetched in full joins the state
+    file as soon as it is written, so that a run that stops part way does not
+    fetch it in full again.
 
     Args:
         client: Slack client for the workspace.
@@ -79,6 +93,8 @@ def run(
         days: Number of recent days to fetch again.
         limit: Most messages that the run may delete, or None for no limit.
         now: The current time.
+        checkpoint: Function called with the result of each channel fetched in full,
+                    once the state file lists it, or None.
 
     Returns:
         What the run did to each channel, in the order of conversations.list.
@@ -97,6 +113,7 @@ def run(
     directories = threadvault.vault.layout.assign({channel['id']: channel['name'] for channel in targets}, previous)
     raw = pathlib.Path(os.path.join(vault, threadvault.vault.export.RAW_DIRECTORY))
     transcripts = pathlib.Path(os.path.join(vault, threadvault.vault.markdown.TRANSCRIPTS_DIRECTORY))
+    progress = {channel: directory for channel, directory in directories.items() if channel in previous}
     results: list[Result] = []
 
     _move((raw, transcripts), previous, directories)
@@ -125,10 +142,115 @@ def run(
 
         results.append(Result(channel = channel['id'], directory = directory, messages = len(outcome.messages), deleted = len(outcome.deleted), withheld = len(outcome.withheld), files = saved, failures = failed))
 
+        if known: continue
+
+        progress[channel['id']] = directory
+        threadvault.vault.state.save(vault, progress)
+
+        if checkpoint is not None: checkpoint(results[-1])
+
     threadvault.vault.markdown.catalogue(vault, targets, directories, timezone = settings.workspace_timezone, language = settings.markdown_language)
     threadvault.vault.state.save(vault, directories)
 
     return results
+
+def publish(
+    client: slack_sdk.web.WebClient,
+    settings: threadvault.customisation.Settings,
+    *,
+    directory: pathlib.Path,
+    full_name: str,
+    token: collections.abc.Callable[[], str],
+    days: int,
+    limit: int | None,
+    now: datetime.datetime
+) -> list[Result]:
+
+    """Backs up the workspace into its vault on GitHub.
+
+    First, git must be new enough, as an older one would ignore the settings
+    that keep it apart from the machine. The repository is created as
+    private when it does not exist, and refused when it is public. The vault
+    is cloned into `directory`, or made to match GitHub there, and gets a
+    README and .gitattributes when it has none; then `run` backs up the
+    workspace into it. Each channel fetched in full is committed and pushed
+    on its own, so that a long first run keeps its progress, and the rest
+    goes into one commit at the end. Before every push, the repository must
+    still be private.
+
+    Args:
+        client: Slack client for the workspace.
+        settings: Settings of the workspace.
+        directory: Directory for the clone of the vault.
+        full_name: Repository of the vault, as owner/name.
+        token: Function that gives a current GitHub access token.
+        days: Number of recent days to fetch again.
+        limit: Most messages that the run may delete, or None for no limit.
+        now: The current time.
+
+    Returns:
+        What the run did to each channel, in the order of conversations.list.
+
+    Raises:
+        VaultError: The repository is public, or has disappeared.
+        threadvault.github.rest.GitHubError: GitHub refused a request, or could not be reached.
+        threadvault.vault.repository.GitError: git is missing or too old, or a git command failed.
+        slack_sdk.errors.SlackApiError: Slack refused a request.
+        threadvault.vault.state.StateError: The state file of the vault cannot be used.
+    """
+
+    threadvault.vault.repository.verify()
+
+    found = threadvault.github.rest.repository(token(), full_name) or threadvault.github.rest.create(token(), full_name)
+
+    if not found['private']: raise VaultError(f'{full_name} is public; {threadvault.product.NAME} backs up only into private repositories')
+
+    user = threadvault.github.rest.user(token())
+    repository = threadvault.vault.repository.Repository(directory, token = token, name = user['login'], email = f'{user['id']}+{user['login']}@users.noreply.github.com')
+
+    if pathlib.Path(os.path.join(directory, '.git')).is_dir(): repository.refresh()
+    else: repository.clone(found['clone_url'])
+
+    _prepare(directory, full_name.partition('/')[2], settings.markdown_language)
+
+    def checkpoint(
+        result: Result
+    ) -> None:
+
+        _push(repository, f'Back up #{result.directory}', token, full_name)
+
+    results = run(client, directory, settings, days = days, limit = limit, now = now, checkpoint = checkpoint)
+
+    _push(repository, f'Back up at {now:%Y-%m-%d %H:%M} UTC', token, full_name)
+
+    return results
+
+def _prepare(
+    directory: pathlib.Path,
+    name: str,
+    language: threadvault.configuration.Language
+) -> None:
+
+    attributes = pathlib.Path(os.path.join(directory, ATTRIBUTES_FILE))
+
+    if not attributes.exists(): attributes.write_text(_ATTRIBUTES_CONTENT, encoding = 'utf-8', newline = '\n')
+
+    threadvault.vault.markdown.introduce(directory, name, language = language)
+
+def _push(
+    repository: threadvault.vault.repository.Repository,
+    message: str,
+    token: collections.abc.Callable[[], str],
+    full_name: str
+) -> None:
+
+    if not repository.commit(message): return
+
+    found = threadvault.github.rest.repository(token(), full_name)
+
+    if found is None or not found['private']: raise VaultError(f'{full_name} is no longer a private repository, so the backup was not pushed')
+
+    repository.push()
 
 def _download(
     client: slack_sdk.web.WebClient,

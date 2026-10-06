@@ -1,7 +1,10 @@
+import collections.abc
 import decimal
 import json
 import os
 import pathlib
+import shutil
+import subprocess
 import typing
 
 import pytest
@@ -59,6 +62,37 @@ def slack(
 ) -> Slack:
 
     return Slack(workspace)
+
+@pytest.fixture
+def git() -> collections.abc.Callable[..., str]:
+
+    return execute
+
+@pytest.fixture
+def remote(
+    tmp_path: pathlib.Path
+) -> pathlib.Path:
+
+    path = pathlib.Path(os.path.join(tmp_path, 'remote.git'))
+    seed = pathlib.Path(os.path.join(tmp_path, 'seed'))
+
+    execute('init', '--quiet', '--bare', '--initial-branch=main', str(path), directory = tmp_path)
+    execute('clone', '--quiet', str(path), str(seed), directory = tmp_path)
+    pathlib.Path(os.path.join(seed, 'README.md')).write_text('# xxx', encoding = 'utf-8')
+    execute('add', '--all', directory = seed)
+    execute('commit', '--quiet', '--message', 'xxx', directory = seed)
+    execute('push', '--quiet', 'origin', 'HEAD:main', directory = seed)
+
+    return path
+
+def execute(
+    *arguments: str,
+    directory: pathlib.Path
+) -> str:
+
+    environment = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')} | {'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_AUTHOR_NAME': 'xxx', 'GIT_AUTHOR_EMAIL': 'xxx@xxx.xxx', 'GIT_COMMITTER_NAME': 'xxx', 'GIT_COMMITTER_EMAIL': 'xxx@xxx.xxx'}
+
+    return subprocess.run([str(shutil.which('git')), *arguments], cwd = directory, env = environment, capture_output = True, encoding = 'utf-8', check = True).stdout
 
 def page(
     key: str,

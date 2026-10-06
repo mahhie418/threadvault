@@ -12,6 +12,13 @@ DIRECTORIES = {'CXXX1': 'general', 'CXXX2': 'xxx'}
 NAMES = {'UXXX1': 'xxx1', 'CXXX1': 'general'}
 URL = 'https://xxx.slack.com/'
 
+READMES_INTRODUCED: list[tuple[str, threadvault.configuration.Language, str]] = [
+    ('', 'en', '# Slack backup'),
+    ('', 'ja', '# Slack のバックアップ'),
+    ('# xxx', 'en', '# Slack backup'),
+    ('xxx', 'en', 'xxx')
+]
+
 MONTHS_SPLIT = [('Asia/Tokyo', ['2023-11.md']), ('UTC', ['2023-10.md'])]
 
 FILES_ATTACHED = [
@@ -127,6 +134,22 @@ def test_markdown_file_link(
     lines = pathlib.Path(os.path.join(tmp_path, '2023-11.md')).read_text(encoding = 'utf-8').splitlines()
 
     assert lines[-3:] == ['', '- [xxx1.txt](https://xxx.slack.com/files/UXXX2/FXXX1/xxx1.txt)', '- [xxx 2.txt](../../attachments/2023-11/FXXX2/xxx%202.txt)']
+
+@pytest.mark.parametrize(('existing', 'language', 'expected'), READMES_INTRODUCED)
+def test_markdown_readme_introduction(
+    tmp_path: pathlib.Path,
+    existing: str,
+    language: threadvault.configuration.Language,
+    expected: str
+) -> None:
+
+    path = pathlib.Path(os.path.join(tmp_path, threadvault.vault.markdown.README_FILE))
+
+    if existing: path.write_text(existing, encoding = 'utf-8')
+
+    threadvault.vault.markdown.introduce(tmp_path, 'xxx', language = language)
+
+    assert path.read_text(encoding = 'utf-8').splitlines()[0] == expected
 
 def test_markdown_index_japanese(
     tmp_path: pathlib.Path

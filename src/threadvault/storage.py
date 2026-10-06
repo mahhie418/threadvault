@@ -23,6 +23,15 @@ _MIGRATIONS: tuple[tuple[str, ...], ...] = (
         ) STRICT
         """,
     ),
+    (
+        """
+        CREATE TABLE github (
+            credential_id INTEGER PRIMARY KEY CHECK (credential_id = 1),
+            credential_data TEXT NOT NULL,
+            update_time TEXT NOT NULL
+        ) STRICT
+        """,
+    ),
 )
 
 class DatabaseError(Exception):

@@ -46,9 +46,12 @@ ignore = [
 "src/threadvault/terminal.py" = [
     "T201"
 ]
+"src/threadvault/vault/repository.py" = [
+    "S603"
+]
 "tests/**" = [
     "D",
-    "PLR2004", "S101"
+    "PLR2004", "S101", "S105", "S106", "S603"
 ]
 
 [tool.ruff.lint.flake8-quotes]

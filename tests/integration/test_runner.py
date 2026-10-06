@@ -1,3 +1,4 @@
+import collections.abc
 import dataclasses
 import datetime
 import json
@@ -5,16 +6,22 @@ import os
 import pathlib
 import typing
 
+import httpx
+import pytest
 import respx
 import slack_sdk
 
 import threadvault.backup.runner
 import threadvault.customisation
+import threadvault.github.rest
+import threadvault.slack.api
+import threadvault.vault.repository
 import threadvault.vault.state
 
 NOW = datetime.datetime(2026, 10, 5, 1, 0, tzinfo = datetime.UTC)
 
 SETTINGS = threadvault.customisation.Settings(workspace_timezone = 'Asia/Tokyo', markdown_language = 'ja')
+REPOSITORY = f'{threadvault.github.rest.API_URL}/repos/xxx/xxx'
 
 MESSAGES_DELETION = {'1510880400.000000', '1791075600.000001'}
 
@@ -47,6 +54,20 @@ FILES_EXPECTED = [
     'transcripts/xxx/2026-10.md'
 ]
 
+FILES_PUBLISHED = [
+    '.gitattributes',
+    '.threadvault/state.json',
+    'README.md',
+    'raw/channels.json',
+    'raw/general/2017-11-17.json',
+    'raw/general/2026-10-04.json',
+    'raw/groups.json',
+    'raw/users.json',
+    'transcripts/general/2017-11.md',
+    'transcripts/general/2026-10.md',
+    'transcripts/index.md'
+]
+
 def locate(
     *names: str
 ) -> pathlib.Path:
@@ -61,6 +82,13 @@ def run(
 ) -> list[threadvault.backup.runner.Result]:
 
     return threadvault.backup.runner.run(slack, vault, settings, days = 30, limit = limit, now = NOW)
+
+def publish(
+    slack: slack_sdk.web.WebClient,
+    directory: pathlib.Path
+) -> list[threadvault.backup.runner.Result]:
+
+    return threadvault.backup.runner.publish(slack, SETTINGS, directory = directory, full_name = 'xxx/xxx', token = lambda: 'ghu_xxx', days = 30, limit = None, now = NOW)
 
 def survey(
     root: pathlib.Path
@@ -216,3 +244,116 @@ def test_runner_vault_attachment(
         results = run(slack, tmp_path)
 
     assert (results[1].files, results[1].failures) == (0, 1)
+
+def test_runner_vault_interruption(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    history = threadvault.slack.api.history
+
+    def interrupt(
+        client: slack_sdk.web.WebClient,
+        channel: str,
+        *,
+        oldest: str,
+        latest: str
+    ) -> list[dict[str, typing.Any]]:
+
+        if channel == 'CXXX1': raise ConnectionError
+
+        return history(client, channel, oldest = oldest, latest = latest)
+
+    monkeypatch.setattr(threadvault.slack.api, 'history', interrupt)
+
+    with pytest.raises(ConnectionError): run(slack, tmp_path)
+
+    assert threadvault.vault.state.load(tmp_path) == {'CXXX2': 'xxx'}
+
+def test_runner_vault_checkpoint(
+    tmp_path: pathlib.Path,
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    states: list[dict[str, str]] = []
+
+    for _ in range(2): threadvault.backup.runner.run(slack, tmp_path, SETTINGS, days = 30, limit = None, now = NOW, checkpoint = lambda _: states.append(threadvault.vault.state.load(tmp_path)))
+
+    assert states == [{'CXXX2': 'xxx'}, {'CXXX1': 'general', 'CXXX2': 'xxx'}]
+
+def test_runner_vault_publication(
+    tmp_path: pathlib.Path,
+    remote: pathlib.Path,
+    git: collections.abc.Callable[..., str],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    directory = pathlib.Path(os.path.join(tmp_path, 'clone'))
+    found = httpx.Response(200, json = {'clone_url': str(remote), 'full_name': 'xxx/xxx', 'private': True})
+
+    with respx.mock:
+
+        respx.get(REPOSITORY).mock(side_effect = [httpx.Response(404, json = {'message': 'Not Found'}), *[found] * 9])
+        creation = respx.post(f'{threadvault.github.rest.API_URL}/user/repos').respond(201, json = {'clone_url': str(remote), 'full_name': 'xxx/xxx', 'private': True})
+        respx.get(f'{threadvault.github.rest.API_URL}/user').respond(200, json = {'id': 1, 'login': 'xxx'})
+        results = publish(slack, directory)
+        log = git('log', '--format=%s %ae', 'main', directory = remote).splitlines()
+        publish(slack, directory)
+
+    assert creation.call_count == 1
+    assert [result.messages for result in results] == [0, 5]
+    assert log == ['Back up at 2026-10-05 01:00 UTC 1+xxx@users.noreply.github.com', 'Back up #general 1+xxx@users.noreply.github.com', 'Back up #xxx 1+xxx@users.noreply.github.com', 'xxx xxx@xxx.xxx']
+    assert git('log', '--format=%s', 'main', directory = remote).splitlines() == [line.rpartition(' ')[0] for line in log]
+    assert git('ls-tree', '-r', '--name-only', 'main', directory = remote).splitlines() == FILES_PUBLISHED
+    assert git('show', 'main:README.md', directory = remote).splitlines()[0] == '# Slack のバックアップ'
+
+def test_runner_vault_privacy(
+    tmp_path: pathlib.Path,
+    remote: pathlib.Path,
+    git: collections.abc.Callable[..., str],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    directory = pathlib.Path(os.path.join(tmp_path, 'clone'))
+
+    with respx.mock:
+
+        respx.get(REPOSITORY).respond(200, json = {'clone_url': str(remote), 'full_name': 'xxx/xxx', 'private': False})
+
+        with pytest.raises(threadvault.backup.runner.VaultError, match = 'is public'): publish(slack, directory)
+
+    assert not directory.exists()
+    assert git('log', '--format=%s', 'main', directory = remote).splitlines() == ['xxx']
+
+def test_runner_vault_exposure(
+    tmp_path: pathlib.Path,
+    remote: pathlib.Path,
+    git: collections.abc.Callable[..., str],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    directory = pathlib.Path(os.path.join(tmp_path, 'clone'))
+    responses = [httpx.Response(200, json = {'clone_url': str(remote), 'full_name': 'xxx/xxx', 'private': private}) for private in (True, False)]
+
+    with respx.mock:
+
+        respx.get(REPOSITORY).mock(side_effect = responses)
+        respx.get(f'{threadvault.github.rest.API_URL}/user').respond(200, json = {'id': 1, 'login': 'xxx'})
+
+        with pytest.raises(threadvault.backup.runner.VaultError, match = 'no longer a private repository'): publish(slack, directory)
+
+    assert git('log', '--format=%s', 'main', directory = remote).splitlines() == ['xxx']
+
+def test_runner_vault_git(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    directory = pathlib.Path(os.path.join(tmp_path, 'clone'))
+    monkeypatch.setattr(threadvault.vault.repository, 'VERSION_MINIMUM', (999, 0))
+
+    with respx.mock, pytest.raises(threadvault.vault.repository.GitError, match = 'or newer is needed'): publish(slack, directory)
+
+    assert not directory.exists()
