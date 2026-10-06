@@ -49,7 +49,7 @@ class Slack(slack_sdk.web.WebClient):
             case 'conversations.replies': data = page('messages', [message for message in messages if message.get('thread_ts') == arguments['ts']], arguments)
             case 'users.info': data = {'user': next((user for user in self.workspace['users'] if user['id'] == arguments['user']), {'id': arguments['user']})}
             case 'views.open': data = {'view': {'id': 'VXXX'}}
-            case 'views.publish' | 'views.update': data = {}
+            case 'chat.postMessage' | 'views.publish' | 'views.update': data = {}
             case _: raise NotImplementedError(api_method)
 
         return slack_sdk.web.SlackResponse(client = self, http_verb = http_verb, api_url = api_method, req_args = {'params': arguments}, data = {'ok': True, **data}, headers = {}, status_code = 200)

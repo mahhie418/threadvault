@@ -1,5 +1,6 @@
 import collections.abc
 import datetime
+import json
 import os
 import pathlib
 import threading
@@ -16,6 +17,8 @@ import threadvault.customisation
 import threadvault.encryption
 import threadvault.github.oauth
 import threadvault.github.token
+import threadvault.localisation
+import threadvault.product
 import threadvault.slack.handler
 import threadvault.slack.permission
 import threadvault.slack.view
@@ -31,6 +34,12 @@ TOKENS_ISSUED = {'access_token': 'ghu_xxx', 'expires_in': 28800, 'refresh_token'
 
 TABS_OPENED = [('home', 1), ('messages', 0)]
 VIEWERS_HOME = [('UXXX1', 'owner'), ('UXXX2', 'admin'), ('UXXX3', 'member')]
+
+CONNECTIONS_PERMITTED = [
+    ('UXXX2', ('UXXX2',), 1),
+    ('UXXX2', (), 0),
+    ('UXXX3', ('UXXX3',), 0)
+]
 
 CONNECTIONS_FAILED = [
     ({'error': 'device_flow_disabled', 'error_description': 'xxx'}, TOKENS_ISSUED, 'device_flow_disabled'),
@@ -83,10 +92,25 @@ def home(
 
 def press(
     application: slack_bolt.App,
-    user: str
+    user: str,
+    action: str
 ) -> slack_bolt.BoltResponse:
 
-    return application.dispatch(slack_bolt.BoltRequest(body = {'type': 'block_actions', 'team': {'id': 'TXXX'}, 'user': {'id': user}, 'trigger_id': 'xxx', 'actions': [{'type': 'button', 'action_id': threadvault.slack.view.CONNECTION_ACTION}]}, mode = 'socket_mode'))
+    return application.dispatch(slack_bolt.BoltRequest(body = {'type': 'block_actions', 'team': {'id': 'TXXX'}, 'user': {'id': user}, 'trigger_id': 'xxx', 'actions': [{'type': 'button', 'action_id': action}]}, mode = 'socket_mode'))
+
+def submit(
+    application: slack_bolt.App,
+    user: str,
+    view: dict[str, typing.Any]
+) -> slack_bolt.BoltResponse:
+
+    return application.dispatch(slack_bolt.BoltRequest(body = {'type': 'view_submission', 'team': {'id': 'TXXX'}, 'user': {'id': user}, 'view': {'id': 'VXXX', 'type': 'modal', 'state': {'values': {}}} | view}, mode = 'socket_mode'))
+
+def checked(
+    users: list[str]
+) -> dict[str, typing.Any]:
+
+    return {'callback_id': threadvault.slack.view.PERMISSIONS_CALLBACK, 'state': {'values': {f'{threadvault.slack.view.ADMINS_INPUT}0': {threadvault.slack.view.ADMINS_INPUT: {'type': 'checkboxes', 'selected_options': [{'value': user} for user in users]}}}}}
 
 def calls(
     workspace: dict[str, typing.Any],
@@ -145,7 +169,7 @@ def test_handler_github_connection(
         respx.post(threadvault.github.oauth.CODE_URL).respond(200, json = CODE_ISSUED)
         respx.post(threadvault.github.oauth.ACCESS_URL).respond(200, json = TOKENS_ISSUED)
 
-        assert press(application, 'UXXX1').status == 200
+        assert press(application, 'UXXX1', threadvault.slack.view.CONNECTION_ACTION).status == 200
 
     assert manager.acquire(datetime.datetime.now(datetime.UTC)) == 'ghu_xxx'
     assert calls(workspace, 'views.open') == [{'trigger_id': 'xxx', 'view': threadvault.slack.view.connect(code = None, language = 'ja')}]
@@ -167,7 +191,7 @@ def test_handler_github_failure(
         router.post(threadvault.github.oauth.CODE_URL).respond(200, json = code)
         router.post(threadvault.github.oauth.ACCESS_URL).respond(200, json = tokens)
 
-        assert press(application, 'UXXX1').status == 200
+        assert press(application, 'UXXX1', threadvault.slack.view.CONNECTION_ACTION).status == 200
 
     assert not manager.connected()
     assert calls(workspace, 'views.update')[-1] == {'view_id': 'VXXX', 'view': threadvault.slack.view.respond(error = threadvault.github.oauth.OAuthError(reason, 'xxx'), language = 'ja')}
@@ -194,18 +218,88 @@ def test_handler_github_closure(
         respx.post(threadvault.github.oauth.CODE_URL).respond(200, json = CODE_ISSUED)
         respx.post(threadvault.github.oauth.ACCESS_URL).respond(200, json = TOKENS_ISSUED)
 
-        assert press(application, 'UXXX1').status == 200
+        assert press(application, 'UXXX1', threadvault.slack.view.CONNECTION_ACTION).status == 200
 
     assert manager.connected()
     assert len(calls(workspace, 'views.publish')) == 1
 
+@pytest.mark.parametrize(('user', 'allowed', 'count'), CONNECTIONS_PERMITTED)
 def test_handler_github_permission(
     application: slack_bolt.App,
-    workspace: dict[str, typing.Any]
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database,
+    user: str,
+    allowed: tuple[str, ...],
+    count: int
 ) -> None:
 
-    assert press(application, 'UXXX3').status == 200
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(admins_allowed = allowed), update_user = 'UXXX1')
+
+    with respx.mock(assert_all_called = False) as router:
+
+        router.post(threadvault.github.oauth.CODE_URL).respond(200, json = {'error': 'device_flow_disabled', 'error_description': 'xxx'})
+
+        assert press(application, user, threadvault.slack.view.CONNECTION_ACTION).status == 200
+
+    assert len(calls(workspace, 'views.open')) == count
+
+def test_handler_permission_grant(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database
+) -> None:
+
+    assert press(application, 'UXXX1', threadvault.slack.view.PERMISSIONS_ACTION).status == 200
+    assert calls(workspace, 'views.open') == [{'trigger_id': 'xxx', 'view': threadvault.slack.view.permit(admins = ['UXXX2'], allowed = (), language = 'ja')}]
+
+    review = submit(application, 'UXXX1', checked(['UXXX2']))
+    confirmation = threadvault.slack.view.review(granted = ['UXXX2'], revoked = [], language = 'ja')
+
+    assert json.loads(review.body) == {'response_action': 'push', 'view': confirmation}
+    assert json.loads(submit(application, 'UXXX1', confirmation).body) == {'response_action': 'clear'}
+    assert threadvault.customisation.SettingsIO(database).load('TXXX').admins_allowed == ('UXXX2',)
+    assert [arguments['user_id'] for arguments in calls(workspace, 'views.publish')] == ['UXXX1', 'UXXX2']
+    assert calls(workspace, 'chat.postMessage') == [{'channel': 'UXXX2', 'text': threadvault.localisation.translate('notice.grant', 'ja', owner = 'UXXX1', product = threadvault.product.NAME)}, {'channel': 'UXXX1', 'text': threadvault.localisation.translate('notice.grant.done', 'ja', user = 'UXXX2', product = threadvault.product.NAME)}]
+
+def test_handler_permission_revocation(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database
+) -> None:
+
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(admins_allowed = ('UXXX2',)), update_user = 'UXXX1')
+
+    review = submit(application, 'UXXX1', checked([]))
+    confirmation = threadvault.slack.view.review(granted = [], revoked = ['UXXX2'], language = 'ja')
+
+    assert json.loads(review.body) == {'response_action': 'push', 'view': confirmation}
+    assert json.loads(submit(application, 'UXXX1', confirmation).body) == {'response_action': 'clear'}
+    assert threadvault.customisation.SettingsIO(database).load('TXXX').admins_allowed == ()
+    assert calls(workspace, 'chat.postMessage') == [{'channel': 'UXXX2', 'text': threadvault.localisation.translate('notice.revocation', 'ja', owner = 'UXXX1', product = threadvault.product.NAME)}, {'channel': 'UXXX1', 'text': threadvault.localisation.translate('notice.revocation.done', 'ja', user = 'UXXX2', product = threadvault.product.NAME)}]
+
+def test_handler_permission_unchanged(
+    application: slack_bolt.App,
+    database: threadvault.storage.Database
+) -> None:
+
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(admins_allowed = ('UXXX2', 'UXXX9')), update_user = 'UXXX1')
+
+    review = submit(application, 'UXXX1', checked(['UXXX2']))
+
+    assert json.loads(review.body) == {'response_action': 'errors', 'errors': {f'{threadvault.slack.view.ADMINS_INPUT}0': threadvault.localisation.translate('permissions.unchanged', 'ja')}}
+
+def test_handler_permission_owner(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database
+) -> None:
+
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(admins_allowed = ('UXXX2',)), update_user = 'UXXX1')
+
+    assert press(application, 'UXXX2', threadvault.slack.view.PERMISSIONS_ACTION).status == 200
+    assert submit(application, 'UXXX2', threadvault.slack.view.review(granted = [], revoked = ['UXXX2'], language = 'ja')).status == 200
     assert calls(workspace, 'views.open') == []
+    assert threadvault.customisation.SettingsIO(database).load('TXXX').admins_allowed == ('UXXX2',)
 
 def test_handler_thread_detachment() -> None:
 

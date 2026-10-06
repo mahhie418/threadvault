@@ -12,7 +12,8 @@ import threadvault.storage
 SETTINGS_VALID = [
     {'schedule_time': '23:59'},
     {'attachment_size_maximum': 1},
-    {'attachment_size_maximum': threadvault.customisation.ATTACHMENT_SIZE_MAXIMUM}
+    {'attachment_size_maximum': threadvault.customisation.ATTACHMENT_SIZE_MAXIMUM},
+    {'admins_allowed': ('UXXX1', 'WXXX2')}
 ]
 
 SETTINGS_INVALID = [
@@ -24,7 +25,8 @@ SETTINGS_INVALID = [
     ({'channel_mode': 'xxx'}, 'channel_mode'),
     ({'attachment_size_maximum': 0}, 'attachment_size_maximum'),
     ({'attachment_size_maximum': threadvault.customisation.ATTACHMENT_SIZE_MAXIMUM + 1}, 'attachment_size_maximum'),
-    ({'markdown_language': 'xxx'}, 'markdown_language')
+    ({'markdown_language': 'xxx'}, 'markdown_language'),
+    ({'admins_allowed': ('UXXX1', 'xxx')}, 'admins_allowed')
 ]
 
 @pytest.fixture
@@ -73,7 +75,8 @@ def test_customisation_settings_store(
         channels_joined = False,
         attachments_enabled = False,
         attachment_size_maximum = 50,
-        markdown_language = 'ja'
+        markdown_language = 'ja',
+        admins_allowed = ('UXXX1', 'UXXX2')
     )
 
     store.save('xxx1', settings, update_user = 'xxx')
@@ -121,6 +124,6 @@ def test_customisation_json_unknown() -> None:
 
 def test_customisation_json_conversion() -> None:
 
-    settings = threadvault.customisation.Settings(channel_mode = 'selected', channels_selected = ('xxx2', 'xxx1'))
+    settings = threadvault.customisation.Settings(channel_mode = 'selected', channels_selected = ('xxx2', 'xxx1'), admins_allowed = ('UXXX2', 'UXXX1'))
 
     assert settings == threadvault.customisation.Settings.decode(settings.encode())

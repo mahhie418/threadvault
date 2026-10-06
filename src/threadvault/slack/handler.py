@@ -1,6 +1,8 @@
 """Listeners of the Slack app, which answer the events and actions in the workspace."""
 
 import collections.abc
+import dataclasses
+import json
 import logging
 import threading
 import typing
@@ -13,6 +15,7 @@ import threadvault.customisation
 import threadvault.github.oauth
 import threadvault.github.token
 import threadvault.localisation
+import threadvault.product
 import threadvault.slack.permission
 import threadvault.slack.view
 import threadvault.storage
@@ -32,7 +35,10 @@ def register(
     token of the one workspace, rather than with a client per request. What
     a view shows depends on the role of its viewer, and each view is in the
     language of the Slack locale of its viewer. Only the owner and the admins
-    act in the app, as `threadvault.slack.permission.restrict` makes sure.
+    allowed to operate the app act in it, and only the owner changes the
+    permissions of the admins, as `threadvault.slack.permission.restrict`
+    makes sure. When the permissions change, both the admin and the owner
+    hear of it by direct message.
 
     Args:
         application: The application.
@@ -42,6 +48,7 @@ def register(
     """
 
     store = threadvault.customisation.SettingsIO(database)
+    guard = [threadvault.slack.permission.restrict(settings, store, frozenset({'owner'}))]
 
     def choose(
         user: str
@@ -58,7 +65,7 @@ def register(
 
         workspace = store.load(team)
 
-        application.client.views_publish(user_id = user, view = threadvault.slack.view.home(connected = manager.connected(), destination = workspace.repository_name, role = threadvault.slack.permission.role(settings, user), language = choose(user)))
+        application.client.views_publish(user_id = user, view = threadvault.slack.view.home(connected = manager.connected(), destination = workspace.repository_name, role = threadvault.slack.permission.role(settings, workspace, user), language = choose(user)))
 
     def show(
         modal: str,
@@ -67,6 +74,15 @@ def register(
 
         try: application.client.views_update(view_id = modal, view = view)
         except slack_sdk.errors.SlackApiError as error: _LOGGER.warning('Modal not updated, perhaps because it was closed: %s', error)
+
+    def tell(
+        recipient: str,
+        key: str,
+        **values: str
+    ) -> None:
+
+        try: application.client.chat_postMessage(channel = recipient, text = threadvault.localisation.translate(key, choose(recipient), **values))
+        except slack_sdk.errors.SlackApiError as error: _LOGGER.warning('Direct message to %s not sent: %s', recipient, error)
 
     def link(
         team: str,
@@ -116,9 +132,73 @@ def register(
 
         detach(lambda: link(team, user, opening['id'], language))
 
-    application.use(threadvault.slack.permission.restrict(settings))
+    def manage(
+        ack: slack_bolt.Ack,
+        body: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        ack()
+
+        if context.team_id is None or context.user_id is None: return
+
+        admins = sorted(settings.threadvault_admin_ids - {settings.threadvault_owner_id})
+
+        application.client.views_open(trigger_id = body['trigger_id'], view = threadvault.slack.view.permit(admins = admins, allowed = store.load(context.team_id).admins_allowed, language = choose(context.user_id)))
+
+    def review(
+        ack: slack_bolt.Ack,
+        view: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        if context.team_id is None or context.user_id is None: return
+
+        admins = settings.threadvault_admin_ids - {settings.threadvault_owner_id}
+        allowed = set(store.load(context.team_id).admins_allowed) & admins
+        values: dict[str, dict[str, dict[str, typing.Any]]] = view['state']['values']
+        chosen = {option['value'] for block in values.values() for element in block.values() for option in element['selected_options']}
+        granted, revoked = sorted(chosen - allowed), sorted(allowed - chosen)
+        language = choose(context.user_id)
+
+        if granted or revoked: ack(response_action = 'push', view = threadvault.slack.view.review(granted = granted, revoked = revoked, language = language))
+        else: ack(response_action = 'errors', errors = {f'{threadvault.slack.view.ADMINS_INPUT}0': threadvault.localisation.translate('permissions.unchanged', language)})
+
+    def apply(
+        ack: slack_bolt.Ack,
+        view: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        team, owner = context.team_id, context.user_id
+
+        if team is None or owner is None: return
+
+        changes: dict[str, list[str]] = json.loads(view['private_metadata'])
+        workspace = store.load(team)
+        allowed = (set(workspace.admins_allowed) | set(changes['granted'])) - set(changes['revoked'])
+
+        store.save(team, dataclasses.replace(workspace, admins_allowed = tuple(sorted(allowed))), update_user = owner)
+        ack(response_action = 'clear')
+
+        for user in [owner, *changes['granted'], *changes['revoked']]: refresh(team, user)
+
+        for user in changes['granted']:
+
+            tell(user, 'notice.grant', owner = owner, product = threadvault.product.NAME)
+            tell(owner, 'notice.grant.done', user = user, product = threadvault.product.NAME)
+
+        for user in changes['revoked']:
+
+            tell(user, 'notice.revocation', owner = owner, product = threadvault.product.NAME)
+            tell(owner, 'notice.revocation.done', user = user, product = threadvault.product.NAME)
+
+    application.use(threadvault.slack.permission.restrict(settings, store, frozenset({'owner', 'operator'})))
     application.event('app_home_opened')(publish)
     application.action(threadvault.slack.view.CONNECTION_ACTION)(connect)
+    application.action(threadvault.slack.view.PERMISSIONS_ACTION, middleware = guard)(manage)
+    application.view(threadvault.slack.view.PERMISSIONS_CALLBACK, middleware = guard)(review)
+    application.view(threadvault.slack.view.PERMISSIONS_CONFIRMATION, middleware = guard)(apply)
 
 def detach(
     function: collections.abc.Callable[[], None]

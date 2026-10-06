@@ -5,7 +5,9 @@
   },
   "features": {
     "app_home": {
-      "home_tab_enabled": true
+      "home_tab_enabled": true,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": true
     },
     "bot_user": {
       "display_name": "ThreadVault"
@@ -16,6 +18,7 @@
       "bot": [
         "channels:history",
         "channels:read",
+        "chat:write",
         "files:read",
         "groups:history",
         "groups:read",

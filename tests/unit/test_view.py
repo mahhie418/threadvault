@@ -1,3 +1,4 @@
+import json
 import typing
 
 import pytest
@@ -16,15 +17,23 @@ STATES_HOME = [
 
 ROLES_MESSAGE = [
     ('owner', ['You are the owner.']),
-    ('admin', ['You are an admin.']),
+    ('operator', ['You are an admin with permission to operate the app.']),
+    ('admin', ['You are an admin without permission to operate the app.']),
     ('member', [])
 ]
 
 VIEWERS_MESSAGE = [
-    ({'connected': True, 'role': 'owner'}, []),
-    ({'connected': False, 'role': 'owner'}, [threadvault.slack.view.CONNECTION_ACTION]),
-    ({'connected': False, 'role': 'admin'}, [threadvault.slack.view.CONNECTION_ACTION]),
+    ({'connected': True, 'role': 'owner'}, [threadvault.slack.view.PERMISSIONS_ACTION]),
+    ({'connected': False, 'role': 'owner'}, [threadvault.slack.view.CONNECTION_ACTION, threadvault.slack.view.PERMISSIONS_ACTION]),
+    ({'connected': False, 'role': 'operator'}, [threadvault.slack.view.CONNECTION_ACTION]),
+    ({'connected': False, 'role': 'admin'}, []),
     ({'connected': False, 'role': 'member'}, [])
+]
+
+ADMINS_ALLOWED = [
+    (['UXXX1', 'UXXX2'], ('UXXX2',), [['UXXX1', 'UXXX2']], [['UXXX2']]),
+    ([f'UXXX{index}' for index in range(12)], ('UXXX0', 'UXXX11'), [[f'UXXX{index}' for index in range(10)], ['UXXX10', 'UXXX11']], [['UXXX0'], ['UXXX11']]),
+    (['UXXX1'], (), [['UXXX1']], [[]])
 ]
 
 CONNECTIONS_MESSAGE = [
@@ -91,3 +100,34 @@ def test_view_connection_response(
 
     assert view['type'] == 'modal'
     assert [block['text']['text'] for block in view['blocks']] == [text]
+
+@pytest.mark.parametrize(('admins', 'allowed', 'groups', 'chosen'), ADMINS_ALLOWED)
+def test_view_permission_choice(
+    admins: list[str],
+    allowed: tuple[str, ...],
+    groups: list[list[str]],
+    chosen: list[list[str]]
+) -> None:
+
+    view = threadvault.slack.view.permit(admins = admins, allowed = allowed, language = 'en')
+    inputs = [block for block in view['blocks'] if block['type'] == 'input']
+
+    assert view['callback_id'] == threadvault.slack.view.PERMISSIONS_CALLBACK
+    assert [block['block_id'] for block in inputs] == [f'{threadvault.slack.view.ADMINS_INPUT}{index}' for index in range(len(groups))]
+    assert [[option['value'] for option in block['element']['options']] for block in inputs] == groups
+    assert [[option['value'] for option in block['element']['initial_options']] if 'initial_options' in block['element'] else [] for block in inputs] == chosen
+
+def test_view_permission_confirmation() -> None:
+
+    view = threadvault.slack.view.review(granted = ['UXXX1'], revoked = ['UXXX2'], language = 'en')
+
+    assert view['callback_id'] == threadvault.slack.view.PERMISSIONS_CONFIRMATION
+    assert json.loads(view['private_metadata']) == {'granted': ['UXXX1'], 'revoked': ['UXXX2']}
+    assert [block['text']['text'] for block in view['blocks']] == ['Apply these changes?\n• Allow <@UXXX1> to operate the app\n• Withdraw the permission of <@UXXX2>']
+
+def test_view_permission_absence() -> None:
+
+    view = threadvault.slack.view.permit(admins = [], allowed = (), language = 'en')
+
+    assert 'submit' not in view
+    assert [block['text']['text'] for block in view['blocks']] == ['There are no admins other than you. Add their Slack user IDs to THREADVAULT_ADMIN_IDS first.']

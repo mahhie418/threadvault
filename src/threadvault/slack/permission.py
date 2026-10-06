@@ -6,11 +6,13 @@ import typing
 import slack_bolt
 
 import threadvault.configuration
+import threadvault.customisation
 
-type Role = typing.Literal['owner', 'admin', 'member']
+type Role = typing.Literal['owner', 'operator', 'admin', 'member']
 
 def role(
     settings: threadvault.configuration.Settings,
+    workspace: threadvault.customisation.Settings,
     user: str
 ) -> Role:
 
@@ -18,34 +20,42 @@ def role(
 
     Args:
         settings: Settings of the deployment.
+        workspace: Settings of the workspace, with the admins allowed to operate the app.
         user: Slack user ID.
 
     Returns:
         owner for the user in THREADVAULT_OWNER_ID, who installed the app,
-        admin for the users in THREADVAULT_ADMIN_IDS, or member for anyone else.
+        operator for the admins whom the owner allows to operate the app,
+        admin for the other users in THREADVAULT_ADMIN_IDS, or member for
+        anyone else.
     """
 
     if user == settings.threadvault_owner_id: return 'owner'
+    if user not in settings.threadvault_admin_ids: return 'member'
 
-    return 'admin' if user in settings.threadvault_admin_ids else 'member'
+    return 'operator' if user in workspace.admins_allowed else 'admin'
 
 def restrict(
-    settings: threadvault.configuration.Settings
+    settings: threadvault.configuration.Settings,
+    store: threadvault.customisation.SettingsIO,
+    roles: frozenset[Role]
 ) -> collections.abc.Callable[..., slack_bolt.BoltResponse | None]:
 
-    """Builds a middleware that lets only the owner and the admins act in the app.
+    """Builds a middleware that lets only some roles act in the app.
 
     Events, such as an opened App Home, reach the listeners whoever caused
     them. Any other request, such as a pressed button, reaches them only
-    from the owner or an admin; from anyone else, it is acknowledged and
-    dropped, so that no listener acts for them even if a view showed them a
-    button.
+    from a user with one of the roles; from anyone else, it is acknowledged
+    and dropped, so that no listener acts for them even if a view showed
+    them a button.
 
     Args:
         settings: Settings of the deployment.
+        store: Settings of each workspace.
+        roles: Roles that may act.
 
     Returns:
-        The middleware, for `slack_bolt.App.use`.
+        The middleware, for `slack_bolt.App.use` or the middleware of a listener.
     """
 
     def check(
@@ -55,7 +65,7 @@ def restrict(
         next_: collections.abc.Callable[[], None]
     ) -> slack_bolt.BoltResponse | None:
 
-        if body.get('type') != 'event_callback' and (context.user_id is None or role(settings, context.user_id) == 'member'): return ack()
+        if body.get('type') != 'event_callback' and (context.team_id is None or context.user_id is None or role(settings, store.load(context.team_id), context.user_id) not in roles): return ack()
 
         return next_()
 
