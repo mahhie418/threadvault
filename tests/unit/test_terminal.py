@@ -178,4 +178,6 @@ def test_terminal_command_print_manifest(
     manifest = json.loads(capsys.readouterr().out)
 
     assert manifest['oauth_config']['scopes']['bot'] == ['channels:history', 'channels:read', 'files:read', 'groups:history', 'groups:read', 'reactions:read', 'users:read']
+    assert manifest['features']['app_home']['home_tab_enabled']
+    assert manifest['settings']['event_subscriptions']['bot_events'] == ['app_home_opened']
     assert manifest['settings']['socket_mode_enabled']

@@ -11,8 +11,12 @@ import slack_bolt.adapter.socket_mode
 import slack_sdk
 
 import threadvault.configuration
+import threadvault.encryption
+import threadvault.github.token
 import threadvault.product
 import threadvault.slack.api
+import threadvault.slack.handler
+import threadvault.storage
 
 LOCK_FILE = 'serve.lock'
 
@@ -21,13 +25,19 @@ class LockError(Exception):
     """Raised when another app already serves with the same data directory."""
 
 def build(
-    client: slack_sdk.web.WebClient
+    client: slack_sdk.web.WebClient,
+    settings: threadvault.configuration.Settings,
+    database: threadvault.storage.Database,
+    manager: threadvault.github.token.TokenManager
 ) -> slack_bolt.App:
 
-    """Builds the Slack app.
+    """Builds the Slack app with its listeners.
 
     Args:
         client: Slack client with the bot token.
+        settings: Settings of the deployment.
+        database: Database with the settings of each workspace.
+        manager: GitHub tokens of the deployment.
 
     Returns:
         The app.
@@ -36,7 +46,10 @@ def build(
         slack_bolt.error.BoltError: Slack refused the bot token.
     """
 
-    return slack_bolt.App(token = client.token, client = client)
+    application = slack_bolt.App(token = client.token, client = client)
+    threadvault.slack.handler.register(application, settings, database, manager)
+
+    return application
 
 @contextlib.contextmanager
 def lock(
@@ -87,10 +100,19 @@ def serve(
 
     Raises:
         LockError: Another app already serves with the data directory.
+        threadvault.encryption.SecretKeyError: The secret key cannot be used.
+        threadvault.storage.DatabaseError: The database cannot be used.
         slack_bolt.error.BoltError: Slack refused the bot token.
     """
 
-    with lock(settings.threadvault_data_directory): start(build(threadvault.slack.api.connect(settings.slack_bot_token)), settings.slack_app_token)
+    with lock(settings.threadvault_data_directory):
+
+        cipher = threadvault.encryption.SecretCipher(threadvault.encryption.load(settings.threadvault_secret_key, settings.threadvault_data_directory))
+        database = threadvault.storage.Database(pathlib.Path(os.path.join(settings.threadvault_data_directory, threadvault.storage.DATABASE_FILE)))
+        manager = threadvault.github.token.TokenManager(database, cipher, settings.github_app_client_id)
+
+        try: start(build(threadvault.slack.api.connect(settings.slack_bot_token), settings, database, manager), settings.slack_app_token)
+        finally: database.close()
 
 def start(
     application: slack_bolt.App,

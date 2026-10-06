@@ -4,6 +4,9 @@
     "name": "ThreadVault"
   },
   "features": {
+    "app_home": {
+      "home_tab_enabled": true
+    },
     "bot_user": {
       "display_name": "ThreadVault"
     }
@@ -22,6 +25,11 @@
     }
   },
   "settings": {
+    "event_subscriptions": {
+      "bot_events": [
+        "app_home_opened"
+      ]
+    },
     "socket_mode_enabled": true
   }
 }

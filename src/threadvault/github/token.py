@@ -102,6 +102,18 @@ class TokenManager:
 
         return tokens.access_token
 
+    def connected(
+        self
+    ) -> bool:
+
+        """Tells whether GitHub is connected, without asking GitHub.
+
+        Returns:
+            Whether tokens are saved, usable or not.
+        """
+
+        return self._database.connect().execute(_TOKENS_SELECT).fetchone() is not None
+
     def _load(
         self
     ) -> threadvault.github.oauth.Tokens:

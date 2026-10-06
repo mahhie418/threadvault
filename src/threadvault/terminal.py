@@ -160,7 +160,7 @@ def _slack_serve(
 
         with contextlib.suppress(KeyboardInterrupt): threadvault.slack.application.serve(settings)
 
-    except (threadvault.configuration.ConfigurationError, threadvault.slack.application.LockError, slack_bolt.error.BoltError) as error:
+    except (threadvault.configuration.ConfigurationError, threadvault.slack.application.LockError, threadvault.encryption.SecretKeyError, threadvault.storage.DatabaseError, slack_bolt.error.BoltError) as error:
 
         print(f'error: {error}', file = sys.stderr)
 
