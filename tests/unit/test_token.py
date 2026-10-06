@@ -64,6 +64,7 @@ def test_token_pair_refresh(
 ) -> None:
 
     manager.save(TOKENS_SAVED)
+
     boundary = TOKENS_SAVED.access_expiry - datetime.timedelta(minutes = 5)
 
     with respx.mock:
@@ -79,7 +80,8 @@ def test_token_pair_concurrency(
 ) -> None:
 
     manager.save(TOKENS_SAVED)
-    tokens: list[str] = []
+
+    tokens = []
     threads = [threading.Thread(target = lambda: tokens.append(manager.acquire(TOKENS_SAVED.access_expiry))) for _ in range(2)]
 
     with respx.mock:

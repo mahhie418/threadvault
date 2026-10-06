@@ -11,12 +11,12 @@ import threadvault.github.oauth
 CODE = threadvault.github.oauth.Code(device_code = 'xxx1', user_code = 'XXXX-XXXX', verification_uri = 'https://github.com/login/device', interval = 5)
 TOKENS = {'access_token': 'ghu_xxx', 'expires_in': 28800, 'refresh_token': 'ghr_xxx', 'refresh_token_expires_in': 15897600, 'scope': '', 'token_type': 'bearer'}
 
-REQUESTS_FAILED: list[tuple[httpx.ConnectError | httpx.Response, str]] = [
+REQUESTS_FAILED = [
     (httpx.ConnectError('xxx'), 'connection'),
     (httpx.Response(200, json = {'error': 'device_flow_disabled', 'error_description': 'xxx'}), 'device_flow_disabled')
 ]
 
-POLLS_FAILED: list[tuple[dict[str, typing.Any], str]] = [
+POLLS_FAILED = [
     ({'error': 'expired_token', 'error_description': 'xxx'}, 'expired_token'),
     ({'error': 'access_denied', 'error_description': 'xxx'}, 'access_denied'),
     ({'access_token': 'ghu_xxx', 'scope': '', 'token_type': 'bearer'}, 'expiry')
@@ -54,7 +54,7 @@ def test_oauth_code_failure(
 
 def test_oauth_token_success() -> None:
 
-    sleeps: list[float] = []
+    sleeps = []
     responses = [httpx.Response(200, json = {'error': 'authorization_pending'}), httpx.Response(200, json = {'error': 'slow_down', 'interval': 15}), httpx.Response(200, json = {'error': 'slow_down'}), httpx.Response(200, json = TOKENS)]
 
     with respx.mock:
@@ -75,7 +75,7 @@ def test_oauth_token_failure(
     reason: str
 ) -> None:
 
-    sleeps: list[float] = []
+    sleeps = []
 
     with respx.mock:
 

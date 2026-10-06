@@ -16,7 +16,7 @@ FILE_VALID = {'id': 'FXXX', 'mimetype': 'text/plain', 'url_private_download': 'h
 
 MIMETYPES_ACCEPTED = [('text/plain', 'text/plain'), ('text/html', 'text/html; charset=utf-8')]
 
-DOWNLOADS_FAILED: list[tuple[httpx.Response | Exception, str]] = [
+DOWNLOADS_FAILED = [
     (httpx.Response(404), 'answered 404'),
     (httpx.Response(200, content = b'xxx', headers = {'content-type': 'text/html; charset=utf-8'}), 'web page'),
     (httpx.Response(200, content = b'xxxx', headers = {'content-type': 'text/plain'}), 'larger than 3 bytes'),

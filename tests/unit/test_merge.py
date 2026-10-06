@@ -6,7 +6,7 @@ import threadvault.vault.merge
 
 NOW = datetime.datetime.fromtimestamp(700, datetime.UTC)
 
-DELETIONS_LIMITED: list[tuple[int | None, list[str], list[str], list[str]]] = [
+DELETIONS_LIMITED = [
     (None, ['400.0'], ['500.0', '600.0'], []),
     (2, ['400.0'], ['500.0', '600.0'], []),
     (1, ['400.0', '500.0', '600.0'], [], ['500.0', '600.0']),

@@ -42,9 +42,7 @@ def isolated(
 
     monkeypatch.chdir(tmp_path)
 
-    for name in os.environ:
-
-        if name.startswith(PREFIXES): monkeypatch.delenv(name)
+    for name in [name for name in os.environ if name.startswith(PREFIXES)]: monkeypatch.delenv(name)
 
     return tmp_path
 
@@ -93,7 +91,6 @@ def test_configuration_values_secure() -> None:
 def test_configuration_values_present() -> None:
 
     settings = threadvault.configuration.load(ENVIRONMENT_VALID)
-
     settings.require('slack_bot_token', 'slack_app_token', 'github_app_client_id', 'github_app_slug', 'threadvault_admin_ids')
 
 def test_configuration_values_missing() -> None:
@@ -142,7 +139,6 @@ def test_configuration_dotenv_override(
     file.write_text('THREADVAULT_LOOKBACK_DAYS=0\n', encoding = 'utf-8')
 
     monkeypatch.setenv('THREADVAULT_LOOKBACK_DAYS', '90')
-
     settings = threadvault.configuration.load()
 
     assert settings.threadvault_lookback_days == 90
@@ -153,7 +149,6 @@ def test_configuration_dotenv_missing(
 ) -> None:
 
     monkeypatch.setenv('THREADVAULT_DELETIONS_MAXIMUM', '7')
-
     settings = threadvault.configuration.load()
 
     assert settings.threadvault_deletions_maximum == 7

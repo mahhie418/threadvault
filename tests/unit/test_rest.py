@@ -7,14 +7,14 @@ import respx
 
 import threadvault.github.rest
 
-REPOSITORIES_FOUND: list[tuple[int, dict[str, typing.Any], dict[str, typing.Any] | None]] = [
+REPOSITORIES_FOUND = [
     (200, {'full_name': 'xxx/xxx', 'private': True}, {'full_name': 'xxx/xxx', 'private': True}),
     (404, {'message': 'Not Found'}, None)
 ]
 
 REPOSITORIES_CREATED = [('xxx/xxx1', '/user/repos'), ('XXX/xxx1', '/user/repos'), ('xxx2/xxx1', '/orgs/xxx2/repos')]
 
-REQUESTS_FAILED: list[tuple[httpx.ConnectError | httpx.Response, int]] = [
+REQUESTS_FAILED = [
     (httpx.ConnectError('xxx'), 0),
     (httpx.Response(401, json = {'message': 'Bad credentials'}), 401)
 ]
