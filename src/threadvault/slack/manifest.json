@@ -30,6 +30,9 @@
         "app_home_opened"
       ]
     },
+    "interactivity": {
+      "is_enabled": true
+    },
     "socket_mode_enabled": true
   }
 }

@@ -1,5 +1,6 @@
 import importlib.resources
 import json
+import string
 
 import pytest
 
@@ -15,9 +16,10 @@ LOCALES_CHOSEN = [
 
 def test_localisation_key_consistency() -> None:
 
-    keys = [set(json.loads(importlib.resources.files('threadvault.localisation').joinpath(f'{language}.json').read_text(encoding = 'utf-8'))) for language in ('en', 'ja')]
+    translations = [json.loads(importlib.resources.files('threadvault.localisation').joinpath(f'{language}.json').read_text(encoding = 'utf-8')) for language in ('en', 'ja')]
+    placeholders = [{key: {name for _, name, _, _ in string.Formatter().parse(message) if name} for key, message in translation.items()} for translation in translations]
 
-    assert keys[0] == keys[1]
+    assert placeholders[0] == placeholders[1]
 
 @pytest.mark.parametrize(('locale', 'default', 'expected'), LOCALES_CHOSEN)
 def test_localisation_locale_choice(

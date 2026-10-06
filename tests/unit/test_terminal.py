@@ -26,9 +26,9 @@ TOKENS_BACKUP = [
 ]
 
 ENVIRONMENTS_SERVE = [
-    ({'SLACK_APP_TOKEN': 'xapp-xxx', 'THREADVAULT_OWNER_ID': 'UXXX1'}, contextlib.nullcontext, 0, '', ['xapp-xxx']),
-    ({'SLACK_APP_TOKEN': '', 'THREADVAULT_OWNER_ID': ''}, contextlib.nullcontext, 1, 'error: Missing required environment variables: SLACK_APP_TOKEN, THREADVAULT_OWNER_ID\n', []),
-    ({'SLACK_APP_TOKEN': 'xapp-xxx', 'THREADVAULT_OWNER_ID': 'UXXX1'}, threadvault.slack.application.lock, 1, 'error: {product} is already running with the data directory {directory}\n', [])
+    ({'SLACK_APP_TOKEN': 'xapp-xxx', 'THREADVAULT_OWNER_ID': 'UXXX1', 'GITHUB_APP_CLIENT_ID': 'xxx'}, contextlib.nullcontext, 0, '', ['xapp-xxx']),
+    ({'SLACK_APP_TOKEN': '', 'THREADVAULT_OWNER_ID': '', 'GITHUB_APP_CLIENT_ID': ''}, contextlib.nullcontext, 1, 'error: Missing required environment variables: SLACK_APP_TOKEN, THREADVAULT_OWNER_ID, GITHUB_APP_CLIENT_ID\n', []),
+    ({'SLACK_APP_TOKEN': 'xapp-xxx', 'THREADVAULT_OWNER_ID': 'UXXX1', 'GITHUB_APP_CLIENT_ID': 'xxx'}, threadvault.slack.application.lock, 1, 'error: {product} is already running with the data directory {directory}\n', [])
 ]
 
 CLIENTS_LOGIN = [
@@ -181,4 +181,5 @@ def test_terminal_command_print_manifest(
     assert manifest['oauth_config']['scopes']['bot'] == ['channels:history', 'channels:read', 'files:read', 'groups:history', 'groups:read', 'reactions:read', 'users:read']
     assert manifest['features']['app_home']['home_tab_enabled']
     assert manifest['settings']['event_subscriptions']['bot_events'] == ['app_home_opened']
+    assert manifest['settings']['interactivity']['is_enabled']
     assert manifest['settings']['socket_mode_enabled']

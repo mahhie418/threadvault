@@ -29,7 +29,8 @@ def choose(
 
 def translate(
     key: str,
-    language: threadvault.configuration.Language
+    language: threadvault.configuration.Language,
+    **values: str
 ) -> str:
 
     """Gives a message in a language.
@@ -37,12 +38,13 @@ def translate(
     Args:
         key: Key of the message, such as home.github.
         language: The language.
+        **values: Values for the placeholders in the message, such as code.
 
     Returns:
         The message.
     """
 
-    return _messages(language)[key]
+    return _messages(language)[key].format(**values)
 
 @functools.cache
 def _messages(
