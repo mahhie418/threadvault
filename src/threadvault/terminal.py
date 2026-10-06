@@ -157,15 +157,14 @@ def _slack_serve(
 
         settings = threadvault.configuration.load()
         settings.require('slack_bot_token', 'slack_app_token')
-        application = threadvault.slack.application.build(threadvault.slack.api.connect(settings.slack_bot_token))
 
-    except (threadvault.configuration.ConfigurationError, slack_bolt.error.BoltError) as error:
+        with contextlib.suppress(KeyboardInterrupt): threadvault.slack.application.serve(settings)
+
+    except (threadvault.configuration.ConfigurationError, threadvault.slack.application.LockError, slack_bolt.error.BoltError) as error:
 
         print(f'error: {error}', file = sys.stderr)
 
         return 1
-
-    with contextlib.suppress(KeyboardInterrupt): threadvault.slack.application.start(application, settings.slack_app_token)
 
     return 0
 

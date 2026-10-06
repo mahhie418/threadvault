@@ -1,3 +1,5 @@
+import collections.abc
+import contextlib
 import json
 import os
 import pathlib
@@ -24,8 +26,9 @@ TOKENS_BACKUP = [
 ]
 
 TOKENS_SERVE = [
-    ('xapp-xxx', 0, '', ['xapp-xxx']),
-    ('', 1, 'error: Missing required environment variables: SLACK_APP_TOKEN\n', [])
+    ('xapp-xxx', contextlib.nullcontext, 0, '', ['xapp-xxx']),
+    ('', contextlib.nullcontext, 1, 'error: Missing required environment variables: SLACK_APP_TOKEN\n', []),
+    ('xapp-xxx', threadvault.slack.application.lock, 1, 'error: {product} is already running with the data directory {directory}\n', [])
 ]
 
 CLIENTS_LOGIN = [
@@ -125,13 +128,14 @@ def test_terminal_command_github_login(
     assert capsys.readouterr() == (out, err)
     assert saved == tokens
 
-@pytest.mark.parametrize(('token', 'status', 'err', 'started'), TOKENS_SERVE)
+@pytest.mark.parametrize(('token', 'holder', 'status', 'err', 'started'), TOKENS_SERVE)
 def test_terminal_command_slack_serve(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     slack: slack_sdk.web.WebClient,
     token: str,
+    holder: collections.abc.Callable[[pathlib.Path], contextlib.AbstractContextManager[object]],
     status: int,
     err: str,
     started: list[str]
@@ -157,11 +161,12 @@ def test_terminal_command_slack_serve(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv('SLACK_BOT_TOKEN', 'xoxb-xxx')
     monkeypatch.setenv('SLACK_APP_TOKEN', token)
+    monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
     monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
     monkeypatch.setattr(threadvault.slack.application, 'start', start)
 
-    assert threadvault.terminal.main(['slack-serve']) == status
-    assert capsys.readouterr() == ('', err)
+    with holder(tmp_path): assert threadvault.terminal.main(['slack-serve']) == status
+    assert capsys.readouterr() == ('', err.format(product = threadvault.product.NAME, directory = tmp_path))
     assert tokens == started
 
 def test_terminal_command_print_manifest(
