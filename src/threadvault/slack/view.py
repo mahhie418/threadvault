@@ -16,7 +16,7 @@ def home(
 
     """Builds the App Home, which shows the state of the backup.
 
-    The destination is shown only to admins.
+    The owner and the admins also see the destination and their own role.
 
     Args:
         connected: Whether GitHub is connected.
@@ -29,7 +29,13 @@ def home(
     """
 
     fields = [(threadvault.localisation.translate('home.github', language), threadvault.localisation.translate('home.github.connected' if connected else 'home.github.disconnected', language))]
+    blocks = []
 
-    if role != 'member': fields.append((threadvault.localisation.translate('home.destination', language), f'<https://github.com/{destination}|{destination}>' if destination else threadvault.localisation.translate('home.destination.missing', language)))
+    if role != 'member':
 
-    return {'type': 'home', 'blocks': [{'type': 'section', 'fields': [{'type': 'mrkdwn', 'text': f'*{title}*\n{text}'} for title, text in fields]}]}
+        fields.append((threadvault.localisation.translate('home.destination', language), f'<https://github.com/{destination}|{destination}>' if destination else threadvault.localisation.translate('home.destination.missing', language)))
+        blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate(f'home.role.{role}', language)}]})
+
+    blocks.append({'type': 'section', 'fields': [{'type': 'mrkdwn', 'text': f'*{title}*\n{text}'} for title, text in fields]})
+
+    return {'type': 'home', 'blocks': blocks}

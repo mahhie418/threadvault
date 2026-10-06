@@ -3,5 +3,7 @@
   "home.destination.missing": "未選択",
   "home.github": "GitHub",
   "home.github.connected": "連携済み",
-  "home.github.disconnected": "未連携"
+  "home.github.disconnected": "未連携",
+  "home.role.admin": "あなたは管理者です。",
+  "home.role.owner": "あなたはオーナーです。"
 }

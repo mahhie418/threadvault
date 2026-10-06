@@ -47,7 +47,7 @@ class Slack(slack_sdk.web.WebClient):
             case 'conversations.members': data = page('members', self.workspace['members'][arguments['channel']], arguments)
             case 'conversations.history': data = page('messages', [message for message in reversed(messages) if message.get('thread_ts', message['ts']) == message['ts'] and within(message, arguments)], arguments)
             case 'conversations.replies': data = page('messages', [message for message in messages if message.get('thread_ts') == arguments['ts']], arguments)
-            case 'users.info': data = {'user': next(user for user in self.workspace['users'] if user['id'] == arguments['user'])}
+            case 'users.info': data = {'user': next((user for user in self.workspace['users'] if user['id'] == arguments['user']), {'id': arguments['user']})}
             case 'views.publish': data = {}
             case _: raise NotImplementedError(api_method)
 

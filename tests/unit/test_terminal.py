@@ -25,10 +25,10 @@ TOKENS_BACKUP = [
     ('xoxb-xxx', ['--repo', 'xxx/xxx'], 1, '', 'error: GitHub is not connected yet\n')
 ]
 
-TOKENS_SERVE = [
-    ('xapp-xxx', contextlib.nullcontext, 0, '', ['xapp-xxx']),
-    ('', contextlib.nullcontext, 1, 'error: Missing required environment variables: SLACK_APP_TOKEN\n', []),
-    ('xapp-xxx', threadvault.slack.application.lock, 1, 'error: {product} is already running with the data directory {directory}\n', [])
+ENVIRONMENTS_SERVE = [
+    ({'SLACK_APP_TOKEN': 'xapp-xxx', 'THREADVAULT_OWNER_ID': 'UXXX1'}, contextlib.nullcontext, 0, '', ['xapp-xxx']),
+    ({'SLACK_APP_TOKEN': '', 'THREADVAULT_OWNER_ID': ''}, contextlib.nullcontext, 1, 'error: Missing required environment variables: SLACK_APP_TOKEN, THREADVAULT_OWNER_ID\n', []),
+    ({'SLACK_APP_TOKEN': 'xapp-xxx', 'THREADVAULT_OWNER_ID': 'UXXX1'}, threadvault.slack.application.lock, 1, 'error: {product} is already running with the data directory {directory}\n', [])
 ]
 
 CLIENTS_LOGIN = [
@@ -128,13 +128,13 @@ def test_terminal_command_github_login(
     assert capsys.readouterr() == (out, err)
     assert saved == tokens
 
-@pytest.mark.parametrize(('token', 'holder', 'status', 'err', 'started'), TOKENS_SERVE)
+@pytest.mark.parametrize(('environment', 'holder', 'status', 'err', 'started'), ENVIRONMENTS_SERVE)
 def test_terminal_command_slack_serve(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     slack: slack_sdk.web.WebClient,
-    token: str,
+    environment: dict[str, str],
     holder: collections.abc.Callable[[pathlib.Path], contextlib.AbstractContextManager[object]],
     status: int,
     err: str,
@@ -160,10 +160,11 @@ def test_terminal_command_slack_serve(
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv('SLACK_BOT_TOKEN', 'xoxb-xxx')
-    monkeypatch.setenv('SLACK_APP_TOKEN', token)
     monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
     monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
     monkeypatch.setattr(threadvault.slack.application, 'start', start)
+
+    for name, value in environment.items(): monkeypatch.setenv(name, value)
 
     with holder(tmp_path): assert threadvault.terminal.main(['slack-serve']) == status
     assert capsys.readouterr() == ('', err.format(product = threadvault.product.NAME, directory = tmp_path))

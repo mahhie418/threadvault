@@ -23,7 +23,7 @@ NOW = datetime.datetime(2026, 10, 5, 0, 0, tzinfo = datetime.UTC)
 TOKENS_SAVED = threadvault.github.oauth.Tokens(access_token = 'ghu_xxx', access_expiry = NOW + datetime.timedelta(hours = 8), refresh_token = 'ghr_xxx', refresh_expiry = NOW + datetime.timedelta(days = 184))
 
 TABS_OPENED = [('home', 1), ('messages', 0)]
-VIEWERS_HOME = [('UXXX1', 'admin'), ('UXXX2', 'member')]
+VIEWERS_HOME = [('UXXX1', 'owner'), ('UXXX2', 'admin'), ('UXXX3', 'member')]
 
 @pytest.fixture
 def application(
@@ -33,7 +33,7 @@ def application(
 ) -> slack_bolt.App:
 
     application = slack_bolt.App(client = slack, process_before_response = True)
-    threadvault.slack.handler.register(application, threadvault.configuration.load({'THREADVAULT_ADMIN_IDS': 'UXXX1', 'THREADVAULT_LANGUAGE_DISPLAY': 'ja'}), database, manager)
+    threadvault.slack.handler.register(application, threadvault.configuration.load({'THREADVAULT_OWNER_ID': 'UXXX1', 'THREADVAULT_ADMIN_IDS': 'UXXX2', 'THREADVAULT_LANGUAGE_DISPLAY': 'ja'}), database, manager)
 
     return application
 
@@ -92,7 +92,7 @@ def test_handler_home_locale(
 
     assert home(application, 'UXXX1', 'home').status == 200
     assert calls(workspace, 'users.info') == [{'user': 'UXXX1', 'include_locale': True}]
-    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(connected = False, destination = None, role = 'admin', language = 'en')}]
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(connected = False, destination = None, role = 'owner', language = 'en')}]
 
 @pytest.mark.parametrize(('tab', 'count'), TABS_OPENED)
 def test_handler_home_tab(
@@ -104,4 +104,4 @@ def test_handler_home_tab(
 
     home(application, 'UXXX1', tab)
 
-    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(connected = False, destination = None, role = 'admin', language = 'ja')}] * count
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(connected = False, destination = None, role = 'owner', language = 'ja')}] * count

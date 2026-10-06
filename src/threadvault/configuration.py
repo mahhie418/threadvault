@@ -14,7 +14,7 @@ import platformdirs
 import threadvault.product
 
 type Language = typing.Literal['en', 'ja']
-type FieldRequired = typing.Literal['slack_bot_token', 'slack_app_token', 'github_app_client_id', 'github_app_slug', 'threadvault_admin_ids']
+type FieldRequired = typing.Literal['slack_bot_token', 'slack_app_token', 'github_app_client_id', 'github_app_slug', 'threadvault_owner_id', 'threadvault_admin_ids']
 
 _PATTERN_GITHUB_APP_CLIENT_ID = re.compile(r'[A-Za-z0-9.]+')
 _PATTERN_GITHUB_APP_SLUG = re.compile(r'[a-z0-9][a-z0-9-]*')
@@ -41,6 +41,7 @@ class Settings:
         slack_app_token: Slack app-level token (xapp-...) for Socket Mode.
         github_app_client_id: Client ID of the admins' GitHub App.
         github_app_slug: URL slug of the admins' GitHub App.
+        threadvault_owner_id: Slack user ID of the owner of the app, who installed it.
         threadvault_admin_ids: Slack user IDs that may change settings.
         secret_key: Key that encrypts stored secrets,
                     or None to use the key file in the data directory.
@@ -55,6 +56,7 @@ class Settings:
     slack_app_token: str
     github_app_client_id: str
     github_app_slug: str
+    threadvault_owner_id: str
     threadvault_admin_ids: frozenset[str]
     threadvault_secret_key: str | None
     threadvault_data_directory: pathlib.Path
@@ -119,6 +121,7 @@ def load(
         slack_app_token = slack_app_token,
         github_app_client_id = github_app_client_id,
         github_app_slug = github_app_slug,
+        threadvault_owner_id = _parse('THREADVAULT_OWNER_ID', environment, category = 'user'),
         threadvault_admin_ids = _parse('THREADVAULT_ADMIN_IDS', environment, category = 'id'),
         threadvault_secret_key = _parse('THREADVAULT_SECRET_KEY', environment, category = 'environ') or None,
         threadvault_data_directory = _parse('THREADVAULT_DATA_DIRECTORY', environment, category = 'directory'),
@@ -136,6 +139,8 @@ def _read() -> dict[str, str]:
 @typing.overload
 def _parse(name: str, environment: collections.abc.Mapping[str, str], *, category: typing.Literal['environ']) -> str: ...
 @typing.overload
+def _parse(name: str, environment: collections.abc.Mapping[str, str], *, category: typing.Literal['user']) -> str: ...
+@typing.overload
 def _parse(name: str, environment: collections.abc.Mapping[str, str], *, category: typing.Literal['id']) -> frozenset[str]: ...
 @typing.overload
 def _parse(name: str, environment: collections.abc.Mapping[str, str], *, category: typing.Literal['directory']) -> pathlib.Path: ...
@@ -150,7 +155,7 @@ def _parse(
     name: str,
     environment: collections.abc.Mapping[str, str],
     *,
-    category: typing.Literal['environ', 'id', 'directory', 'language', 'integer'],
+    category: typing.Literal['environ', 'user', 'id', 'directory', 'language', 'integer'],
     default: int | None = 0,
     minimum: int | None = None,
     maximum: int | None = None
@@ -161,6 +166,12 @@ def _parse(
     match category:
 
         case 'environ':
+
+            return value
+
+        case 'user':
+
+            if value and not _PATTERN_SLACK_USER_ID.fullmatch(value): raise ConfigurationError(f'{name} must be one Slack user ID')
 
             return value
 
