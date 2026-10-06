@@ -2,6 +2,7 @@
 
 import argparse
 import datetime
+import importlib.resources
 import os
 import pathlib
 import sys
@@ -59,6 +60,8 @@ def _build() -> argparse.ArgumentParser:
     destination.add_argument('--repo', help = 'GitHub repository of the vault, created as private when missing', metavar = 'OWNER/NAME')
     login = commands.add_parser('github-login', help = 'connect GitHub with the device flow of the GitHub App')
     login.set_defaults(handler = _github_login)
+    manifest = commands.add_parser('print-manifest', help = 'print the manifest for creating the Slack app')
+    manifest.set_defaults(handler = _print_manifest)
 
     return parser
 
@@ -138,5 +141,13 @@ def _github_login(
         return 1
 
     print(f'Connected to GitHub as {login}')
+
+    return 0
+
+def _print_manifest(
+    _: argparse.Namespace
+) -> int:
+
+    print(importlib.resources.files('threadvault.slack').joinpath('manifest.json').read_text(encoding = 'utf-8'), end = '')
 
     return 0

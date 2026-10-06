@@ -1,0 +1,24 @@
+{
+  "display_information": {
+    "description": "Backs up the workspace to a private GitHub repository.",
+    "name": "ThreadVault"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "ThreadVault"
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "channels:history",
+        "channels:read",
+        "files:read",
+        "groups:history",
+        "groups:read",
+        "reactions:read",
+        "users:read"
+      ]
+    }
+  }
+}

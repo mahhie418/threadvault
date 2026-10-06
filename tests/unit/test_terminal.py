@@ -117,3 +117,13 @@ def test_terminal_command_github_login(
 
     assert capsys.readouterr() == (out, err)
     assert saved == tokens
+
+def test_terminal_command_print_manifest(
+    capsys: pytest.CaptureFixture[str]
+) -> None:
+
+    assert threadvault.terminal.main(['print-manifest']) == 0
+
+    manifest = json.loads(capsys.readouterr().out)
+
+    assert manifest['oauth_config']['scopes']['bot'] == ['channels:history', 'channels:read', 'files:read', 'groups:history', 'groups:read', 'reactions:read', 'users:read']
