@@ -1,0 +1,7 @@
+{
+  "home.destination": "保存先",
+  "home.destination.missing": "未選択",
+  "home.github": "GitHub",
+  "home.github.connected": "連携済み",
+  "home.github.disconnected": "未連携"
+}

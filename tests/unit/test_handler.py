@@ -33,7 +33,7 @@ def application(
 ) -> slack_bolt.App:
 
     application = slack_bolt.App(client = slack, process_before_response = True)
-    threadvault.slack.handler.register(application, threadvault.configuration.load({'THREADVAULT_ADMIN_IDS': 'UXXX1'}), database, manager)
+    threadvault.slack.handler.register(application, threadvault.configuration.load({'THREADVAULT_ADMIN_IDS': 'UXXX1', 'THREADVAULT_LANGUAGE_DISPLAY': 'ja'}), database, manager)
 
     return application
 
@@ -81,7 +81,18 @@ def test_handler_home_publication(
     manager.save(TOKENS_SAVED)
 
     assert home(application, user, 'home').status == 200
-    assert calls(workspace, 'views.publish') == [{'user_id': user, 'view': threadvault.slack.view.home(connected = True, destination = 'xxx/xxx', role = role)}]
+    assert calls(workspace, 'views.publish') == [{'user_id': user, 'view': threadvault.slack.view.home(connected = True, destination = 'xxx/xxx', role = role, language = 'ja')}]
+
+def test_handler_home_locale(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any]
+) -> None:
+
+    next(entry for entry in workspace['users'] if entry['id'] == 'UXXX1')['locale'] = 'en-GB'
+
+    assert home(application, 'UXXX1', 'home').status == 200
+    assert calls(workspace, 'users.info') == [{'user': 'UXXX1', 'include_locale': True}]
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(connected = False, destination = None, role = 'admin', language = 'en')}]
 
 @pytest.mark.parametrize(('tab', 'count'), TABS_OPENED)
 def test_handler_home_tab(
@@ -93,4 +104,4 @@ def test_handler_home_tab(
 
     home(application, 'UXXX1', tab)
 
-    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(connected = False, destination = None, role = 'admin')}] * count
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(connected = False, destination = None, role = 'admin', language = 'ja')}] * count

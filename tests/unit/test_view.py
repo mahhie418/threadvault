@@ -5,9 +5,9 @@ import pytest
 import threadvault.slack.view
 
 STATES_HOME = [
-    ({'connected': True, 'destination': 'xxx/xxx', 'role': 'admin'}, ['*GitHub*\nConnected', '*Destination*\n<https://github.com/xxx/xxx|xxx/xxx>']),
-    ({'connected': True, 'destination': 'xxx/xxx', 'role': 'member'}, ['*GitHub*\nConnected']),
-    ({'connected': False, 'destination': None, 'role': 'admin'}, ['*GitHub*\nNot connected', '*Destination*\nNot chosen'])
+    ({'connected': True, 'destination': 'xxx/xxx', 'role': 'admin', 'language': 'ja'}, ['*GitHub*\n連携済み', '*保存先*\n<https://github.com/xxx/xxx|xxx/xxx>']),
+    ({'connected': True, 'destination': 'xxx/xxx', 'role': 'member', 'language': 'en'}, ['*GitHub*\nConnected']),
+    ({'connected': False, 'destination': None, 'role': 'admin', 'language': 'en'}, ['*GitHub*\nNot connected', '*Destination*\nNot chosen'])
 ]
 
 @pytest.mark.parametrize(('state', 'texts'), STATES_HOME)

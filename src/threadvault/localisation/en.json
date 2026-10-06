@@ -1,0 +1,7 @@
+{
+  "home.destination": "Destination",
+  "home.destination.missing": "Not chosen",
+  "home.github": "GitHub",
+  "home.github.connected": "Connected",
+  "home.github.disconnected": "Not connected"
+}
