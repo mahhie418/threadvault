@@ -20,5 +20,8 @@
         "users:read"
       ]
     }
+  },
+  "settings": {
+    "socket_mode_enabled": true
   }
 }

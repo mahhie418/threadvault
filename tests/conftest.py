@@ -17,7 +17,7 @@ class Slack(slack_sdk.web.WebClient):
         workspace: dict[str, typing.Any]
     ) -> None:
 
-        super().__init__()
+        super().__init__(token = 'xoxb-xxx')
 
         self.workspace = workspace
 

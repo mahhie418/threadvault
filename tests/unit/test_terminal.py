@@ -5,6 +5,7 @@ import pathlib
 import cryptography.fernet
 import pytest
 import respx
+import slack_bolt
 import slack_sdk
 
 import threadvault.encryption
@@ -12,6 +13,7 @@ import threadvault.github.oauth
 import threadvault.github.rest
 import threadvault.product
 import threadvault.slack.api
+import threadvault.slack.application
 import threadvault.storage
 import threadvault.terminal
 
@@ -19,6 +21,11 @@ TOKENS_BACKUP = [
     ('xoxb-xxx', ['--out', 'xxx'], 0, 'xxx: 0 messages, 0 deleted, 0 withheld, 0 files, 0 failures\ngeneral: 5 messages, 0 deleted, 0 withheld, 0 files, 0 failures\n', ''),
     ('', ['--out', 'xxx'], 1, '', 'error: Missing required environment variables: SLACK_BOT_TOKEN\n'),
     ('xoxb-xxx', ['--repo', 'xxx/xxx'], 1, '', 'error: GitHub is not connected yet\n')
+]
+
+TOKENS_SERVE = [
+    ('xapp-xxx', 0, '', ['xapp-xxx']),
+    ('', 1, 'error: Missing required environment variables: SLACK_APP_TOKEN\n', [])
 ]
 
 CLIENTS_LOGIN = [
@@ -118,6 +125,45 @@ def test_terminal_command_github_login(
     assert capsys.readouterr() == (out, err)
     assert saved == tokens
 
+@pytest.mark.parametrize(('token', 'status', 'err', 'started'), TOKENS_SERVE)
+def test_terminal_command_slack_serve(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    slack: slack_sdk.web.WebClient,
+    token: str,
+    status: int,
+    err: str,
+    started: list[str]
+) -> None:
+
+    tokens = []
+
+    def connect(
+        _: str
+    ) -> slack_sdk.web.WebClient:
+
+        return slack
+
+    def start(
+        _: slack_bolt.App,
+        token: str
+    ) -> None:
+
+        tokens.append(token)
+
+        raise KeyboardInterrupt
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('SLACK_BOT_TOKEN', 'xoxb-xxx')
+    monkeypatch.setenv('SLACK_APP_TOKEN', token)
+    monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+    monkeypatch.setattr(threadvault.slack.application, 'start', start)
+
+    assert threadvault.terminal.main(['slack-serve']) == status
+    assert capsys.readouterr() == ('', err)
+    assert tokens == started
+
 def test_terminal_command_print_manifest(
     capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -127,3 +173,4 @@ def test_terminal_command_print_manifest(
     manifest = json.loads(capsys.readouterr().out)
 
     assert manifest['oauth_config']['scopes']['bot'] == ['channels:history', 'channels:read', 'files:read', 'groups:history', 'groups:read', 'reactions:read', 'users:read']
+    assert manifest['settings']['socket_mode_enabled']
