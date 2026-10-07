@@ -9,12 +9,16 @@ import threadvault.localisation
 import threadvault.slack.permission
 
 type GitHubState = typing.Literal['connected', 'disconnected', 'expired', 'uninstalled']
+type DestinationOutcome = typing.Literal['check', 'success', 'absence', 'publicity', 'failure']
 
 CONNECTION_ACTION = 'connection_action'
 DISCONNECTION_ACTION = 'disconnection_action'
+DESTINATION_ACTION = 'destination_action'
+DESTINATION_CALLBACK = 'destination_callback'
 PERMISSIONS_ACTION = 'permissions_action'
 PERMISSIONS_CALLBACK = 'permissions_callback'
 PERMISSIONS_CONFIRMATION = 'permissions_confirmation'
+REPOSITORY_ACTION = 'repository_action'
 TRANSFER_ACTION = 'transfer_action'
 TRANSFER_CALLBACK = 'transfer_callback'
 TRANSFER_CONFIRMATION = 'transfer_confirmation'
@@ -22,6 +26,8 @@ TRANSFER_CONFIRMATION = 'transfer_confirmation'
 ADMINS_INPUT = 'admins_input'
 SUCCESSOR_INPUT = 'successor_input'
 
+_OPTION_LIMIT = 100
+_DISPLAY_LIMIT = 75
 _CHECKBOX_LIMIT = 10
 
 def home(
@@ -38,10 +44,10 @@ def home(
     The owner and the admins also see the destination and their own role.
     The owner and the admins allowed to operate the app see a button that
     connects GitHub, connects it again once the connection has stopped
-    working, or disconnects it, and a link to install the GitHub App while
-    it has no installation. The owner also sees buttons that choose the
-    admins allowed to operate the app and that transfer the ownership to an
-    admin.
+    working, or disconnects it, a button that chooses the destination while
+    GitHub is connected, and a link to install the GitHub App while it has
+    no installation. The owner also sees buttons that choose the admins
+    allowed to operate the app and that transfer the ownership to an admin.
 
     Args:
         github: State of the connection to GitHub: disconnected, expired when
@@ -73,7 +79,10 @@ def home(
 
     blocks.append({'type': 'section', 'fields': [_text(title, text) for title, text in fields]})
 
-    if role in ('owner', 'operator'): blocks.append({'type': 'actions', 'elements': [_button(github = github, language = language)]})
+    buttons = [_button(github = github, language = language)]
+
+    if github == 'connected': buttons.append({'type': 'button', 'action_id': DESTINATION_ACTION, 'text': _plain(threadvault.localisation.translate('home.destination.choice', language))})
+    if role in ('owner', 'operator'): blocks.append({'type': 'actions', 'elements': buttons})
     if role in ('owner', 'operator') and github == 'uninstalled': blocks.append({'type': 'section', 'text': _text(threadvault.localisation.translate('home.installation', language), threadvault.localisation.translate('home.installation.missing', language, url = f'https://github.com/apps/{slug}/installations/new'))})
     if role == 'owner': blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': action, 'text': _plain(threadvault.localisation.translate(key, language))} for action, key in ((PERMISSIONS_ACTION, 'home.permissions'), (TRANSFER_ACTION, 'home.transfer'))]})
 
@@ -123,6 +132,70 @@ def respond(
         case _: text = threadvault.localisation.translate('connection.failure', language, message = str(error))
 
     return _modal(threadvault.localisation.translate('connection.title', language), text, language)
+
+def offer(
+    *,
+    current: str | None,
+    language: threadvault.configuration.Language
+) -> dict[str, typing.Any]:
+
+    """Builds the modal that chooses the destination among the private repositories that the GitHub App can access.
+
+    Args:
+        current: Repository of the vault, as owner/name, or None while none is chosen.
+        language: Language of the admin.
+
+    Returns:
+        The view, as views.open takes it.
+    """
+
+    menu: dict[str, typing.Any] = {'type': 'external_select', 'action_id': REPOSITORY_ACTION, 'min_query_length': 0, 'placeholder': _plain(threadvault.localisation.translate('destination.placeholder', language))}
+
+    if current: menu['initial_option'] = _option(current)
+
+    block = {'type': 'input', 'block_id': REPOSITORY_ACTION, 'label': _plain(threadvault.localisation.translate('destination.repository', language)), 'hint': _plain(threadvault.localisation.translate('destination.hint', language)), 'element': menu}
+
+    return {'type': 'modal', 'callback_id': DESTINATION_CALLBACK, 'title': _plain(threadvault.localisation.translate('destination.title', language)), 'submit': _plain(threadvault.localisation.translate('destination.submit', language)), 'close': _plain(threadvault.localisation.translate('destination.close', language)), 'blocks': [block]}
+
+def suggest(
+    names: list[str]
+) -> list[dict[str, typing.Any]]:
+
+    """Builds the options of the repository menu, as many as Slack takes.
+
+    Args:
+        names: Repositories, as owner/name.
+
+    Returns:
+        The options, as an options response takes them.
+    """
+
+    return [_option(name) for name in names[:_OPTION_LIMIT]]
+
+def settle(
+    *,
+    repository: str,
+    outcome: DestinationOutcome,
+    language: threadvault.configuration.Language,
+    message: str = ''
+) -> dict[str, typing.Any]:
+
+    """Builds the modal that chooses the destination, once a repository is submitted.
+
+    Args:
+        repository: The repository, as owner/name.
+        outcome: Where the check of the repository stands: check while it
+                 runs, success once the repository is the destination,
+                 absence when the GitHub App cannot find it, publicity when
+                 it is public, or failure when it could not be checked.
+        language: Language of the admin.
+        message: Why the repository could not be checked.
+
+    Returns:
+        The view, as an update response and views.update take it.
+    """
+
+    return _modal(threadvault.localisation.translate('destination.title', language), threadvault.localisation.translate(f'destination.{outcome}', language, repository = repository, message = message), language)
 
 def permit(
     *,
@@ -236,6 +309,12 @@ def _button(
     confirmation = {'title': _plain(threadvault.localisation.translate('disconnection.title', language)), 'text': _plain(threadvault.localisation.translate('disconnection.text', language)), 'confirm': _plain(threadvault.localisation.translate('disconnection.confirm', language)), 'deny': _plain(threadvault.localisation.translate('disconnection.deny', language)), 'style': 'danger'}
 
     return {'type': 'button', 'action_id': DISCONNECTION_ACTION, 'style': 'danger', 'text': _plain(threadvault.localisation.translate('home.github.disconnection', language)), 'confirm': confirmation}
+
+def _option(
+    name: str
+) -> dict[str, typing.Any]:
+
+    return {'text': _plain(name if len(name) <= _DISPLAY_LIMIT else f'{name[:_DISPLAY_LIMIT - 1]}…'), 'value': name}
 
 def _choice(
     user: str

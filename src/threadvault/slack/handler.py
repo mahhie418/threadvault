@@ -43,7 +43,8 @@ def register(
     `threadvault.slack.permission.restrict` makes sure. When the permissions
     or the ownership change, both the admin and the owner hear of it by
     direct message, and the owner and every admin hear by direct message
-    when GitHub is connected or disconnected.
+    when GitHub is connected or disconnected, or when the destination
+    changes.
 
     Args:
         application: The application.
@@ -53,6 +54,7 @@ def register(
     """
 
     store = threadvault.customisation.SettingsIO(database)
+    cache = threadvault.github.rest.RepositoryCache()
     guard = [threadvault.slack.permission.restrict(settings, store, frozenset({'owner'}))]
 
     def choose(
@@ -145,6 +147,41 @@ def register(
         show(modal, threadvault.slack.view.respond(error = None, language = language))
         notify(team, 'notice.connection', user)
 
+    def index() -> None:
+
+        try: cache.update(manager.acquire(datetime.datetime.now(datetime.UTC)))
+        except (threadvault.github.token.TokenError, threadvault.github.rest.GitHubError) as error: _LOGGER.warning('Repositories were not listed: %s', error)
+
+    def settle(
+        team: str,
+        user: str,
+        modal: str,
+        repository: str,
+        language: threadvault.configuration.Language
+    ) -> None:
+
+        try:
+
+            threadvault.customisation.Settings(repository_name = repository)
+            found = threadvault.github.rest.repository(manager.acquire(datetime.datetime.now(datetime.UTC)), repository)
+
+        except (threadvault.customisation.SettingInvalidError, threadvault.github.token.TokenError, threadvault.github.rest.GitHubError) as error:
+
+            show(modal, threadvault.slack.view.settle(repository = repository, outcome = 'failure', language = language, message = str(error)))
+
+            return
+
+        if found is None or not found['private']:
+
+            show(modal, threadvault.slack.view.settle(repository = repository, outcome = 'absence' if found is None else 'publicity', language = language))
+
+            return
+
+        store.save(team, dataclasses.replace(store.load(team), repository_name = repository), update_user = user)
+        refresh(team, user)
+        show(modal, threadvault.slack.view.settle(repository = repository, outcome = 'success', language = language))
+        notify(team, 'notice.destination', user, repository = repository)
+
     def publish(
         event: dict[str, typing.Any],
         context: slack_bolt.BoltContext
@@ -183,6 +220,42 @@ def register(
         manager.delete()
         refresh(context.team_id, context.user_id)
         notify(context.team_id, 'notice.disconnection', context.user_id)
+
+    def offer(
+        ack: slack_bolt.Ack,
+        body: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        ack()
+
+        if context.team_id is None or context.user_id is None: return
+
+        detach(index)
+        application.client.views_open(trigger_id = body['trigger_id'], view = threadvault.slack.view.offer(current = store.load(context.team_id).repository_name, language = choose(context.user_id)))
+
+    def submit(
+        ack: slack_bolt.Ack,
+        view: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        team, user = context.team_id, context.user_id
+
+        if team is None or user is None: return
+
+        repository: str = view['state']['values'][threadvault.slack.view.REPOSITORY_ACTION][threadvault.slack.view.REPOSITORY_ACTION]['selected_option']['value']
+        language = choose(user)
+
+        ack(response_action = 'update', view = threadvault.slack.view.settle(repository = repository, outcome = 'check', language = language))
+        detach(lambda: settle(team, user, view['id'], repository, language))
+
+    def suggest(
+        ack: slack_bolt.Ack,
+        payload: dict[str, typing.Any]
+    ) -> None:
+
+        ack(options = threadvault.slack.view.suggest(cache.search(payload.get('value', '')) or []))
 
     def manage(
         ack: slack_bolt.Ack,
@@ -301,6 +374,9 @@ def register(
     application.event('app_home_opened')(publish)
     application.action(threadvault.slack.view.CONNECTION_ACTION)(connect)
     application.action(threadvault.slack.view.DISCONNECTION_ACTION)(disconnect)
+    application.action(threadvault.slack.view.DESTINATION_ACTION)(offer)
+    application.view(threadvault.slack.view.DESTINATION_CALLBACK)(submit)
+    application.options(threadvault.slack.view.REPOSITORY_ACTION)(suggest)
     application.action(threadvault.slack.view.PERMISSIONS_ACTION, middleware = guard)(manage)
     application.view(threadvault.slack.view.PERMISSIONS_CALLBACK, middleware = guard)(review)
     application.view(threadvault.slack.view.PERMISSIONS_CONFIRMATION, middleware = guard)(apply)

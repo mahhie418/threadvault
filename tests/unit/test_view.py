@@ -25,8 +25,8 @@ ROLES_MESSAGE = [
 ]
 
 VIEWERS_MESSAGE = [
-    ({'github': 'connected', 'role': 'owner'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.PERMISSIONS_ACTION, 'Admin permissions', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', False)]),
-    ({'github': 'connected', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True)]),
+    ({'github': 'connected', 'role': 'owner'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Admin permissions', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', False)]),
+    ({'github': 'connected', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', False)]),
     ({'github': 'connected', 'role': 'admin'}, []),
     ({'github': 'disconnected', 'role': 'owner'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Admin permissions', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', False)]),
     ({'github': 'disconnected', 'role': 'operator'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', False)]),
@@ -44,6 +44,19 @@ VIEWERS_INSTALLATION = [
     ({'github': 'uninstalled', 'role': 'operator'}, ['*GitHub App*\nNot installed yet. <https://github.com/apps/xxx1/installations/new|Install it> on the account or organisation that will hold the vault.']),
     ({'github': 'uninstalled', 'role': 'admin'}, []),
     ({'github': 'uninstalled', 'role': 'member'}, [])
+]
+
+DESTINATIONS_CURRENT = [
+    (None, []),
+    ('xxx/xxx', ['xxx/xxx'])
+]
+
+OUTCOMES_DESTINATION = [
+    ('check', '', 'Checking xxx/xxx…'),
+    ('success', '', 'Backups now go to xxx/xxx.'),
+    ('absence', '', 'xxx/xxx was not found, or the GitHub App cannot access it.'),
+    ('publicity', '', 'xxx/xxx is public. Backups go only into private repositories.'),
+    ('failure', 'xxx', 'The repository could not be checked: xxx')
 ]
 
 ADMINS_ALLOWED = [
@@ -123,6 +136,38 @@ def test_view_connection_response(
 ) -> None:
 
     view = threadvault.slack.view.respond(error = error, language = 'en')
+
+    assert view['type'] == 'modal'
+    assert [block['text']['text'] for block in view['blocks']] == [text]
+
+@pytest.mark.parametrize(('current', 'values'), DESTINATIONS_CURRENT)
+def test_view_destination_menu(
+    current: str | None,
+    values: list[str]
+) -> None:
+
+    view = threadvault.slack.view.offer(current = current, language = 'en')
+    menu = view['blocks'][0]['element']
+
+    assert (view['callback_id'], menu['action_id'], menu['min_query_length']) == (threadvault.slack.view.DESTINATION_CALLBACK, threadvault.slack.view.REPOSITORY_ACTION, 0)
+    assert ([menu['initial_option']['value']] if 'initial_option' in menu else []) == values
+
+def test_view_destination_option() -> None:
+
+    names = [f'xxx/{'x' * 80}', *(f'xxx/xxx{index}' for index in range(150))]
+    options = threadvault.slack.view.suggest(names)
+
+    assert [option['value'] for option in options] == names[:100]
+    assert options[0]['text']['text'] == f'xxx/{'x' * 70}…'
+
+@pytest.mark.parametrize(('outcome', 'message', 'text'), OUTCOMES_DESTINATION)
+def test_view_destination_result(
+    outcome: threadvault.slack.view.DestinationOutcome,
+    message: str,
+    text: str
+) -> None:
+
+    view = threadvault.slack.view.settle(repository = 'xxx/xxx', outcome = outcome, language = 'en', message = message)
 
     assert view['type'] == 'modal'
     assert [block['text']['text'] for block in view['blocks']] == [text]

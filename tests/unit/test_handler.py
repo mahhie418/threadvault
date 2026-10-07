@@ -34,6 +34,7 @@ TOKENS_EXPIRED = threadvault.github.oauth.Tokens(access_token = 'ghu_xxx', acces
 
 CODE_ISSUED = {'device_code': 'xxx', 'expires_in': 900, 'interval': 0, 'user_code': 'XXXX-XXXX', 'verification_uri': 'https://github.com/login/device'}
 TOKENS_ISSUED = {'access_token': 'ghu_xxx', 'expires_in': 28800, 'refresh_token': 'ghr_xxx', 'refresh_token_expires_in': 15897600}
+REPOSITORIES_RESPONDED = {'total_count': 2, 'repositories': [{'full_name': 'xxx/xxx1', 'private': True}, {'full_name': 'xxx/xxx2', 'private': True}]}
 INSTALLATIONS_RESPONDED = {'total_count': 1, 'installations': [{'id': 1}]}
 
 TABS_OPENED = [('home', 1), ('messages', 0)]
@@ -54,6 +55,13 @@ CONNECTIONS_FAILED = [
 CONNECTIONS_EXPIRED = [
     (TOKENS_EXPIRED, httpx.Response(200, json = INSTALLATIONS_RESPONDED)),
     (TOKENS_SAVED, httpx.Response(401, json = {'message': 'Bad credentials'}))
+]
+
+DESTINATIONS_REFUSED = [
+    ('xxx/xxx', httpx.Response(404, json = {'message': 'Not Found'}), 'absence', ''),
+    ('xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': False}), 'publicity', ''),
+    ('xxx/xxx', httpx.Response(500, text = 'xxx'), 'failure', 'GitHub answered 500 to GET /repos/xxx/xxx: xxx'),
+    ('xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 'failure', 'Repository must look like owner/name')
 ]
 
 INSTALLATIONS_LISTED = [
@@ -128,6 +136,14 @@ def submit(
 
     return application.dispatch(slack_bolt.BoltRequest(body = {'type': 'view_submission', 'team': {'id': 'TXXX'}, 'user': {'id': user}, 'view': {'id': 'VXXX', 'type': 'modal', 'state': {'values': {}}} | view}, mode = 'socket_mode'))
 
+def suggest(
+    application: slack_bolt.App,
+    user: str,
+    value: str
+) -> slack_bolt.BoltResponse:
+
+    return application.dispatch(slack_bolt.BoltRequest(body = {'type': 'block_suggestion', 'team': {'id': 'TXXX'}, 'user': {'id': user}, 'action_id': threadvault.slack.view.REPOSITORY_ACTION, 'block_id': threadvault.slack.view.REPOSITORY_ACTION, 'value': value}, mode = 'socket_mode'))
+
 def checked(
     users: list[str]
 ) -> dict[str, typing.Any]:
@@ -139,6 +155,12 @@ def selected(
 ) -> dict[str, typing.Any]:
 
     return {'callback_id': threadvault.slack.view.TRANSFER_CALLBACK, 'state': {'values': {threadvault.slack.view.SUCCESSOR_INPUT: {threadvault.slack.view.SUCCESSOR_INPUT: {'type': 'users_select', 'selected_user': user}}}}}
+
+def chosen(
+    repository: str
+) -> dict[str, typing.Any]:
+
+    return {'callback_id': threadvault.slack.view.DESTINATION_CALLBACK, 'state': {'values': {threadvault.slack.view.REPOSITORY_ACTION: {threadvault.slack.view.REPOSITORY_ACTION: {'type': 'external_select', 'selected_option': {'text': {'type': 'plain_text', 'text': repository}, 'value': repository}}}}}}
 
 def calls(
     workspace: dict[str, typing.Any],
@@ -370,6 +392,98 @@ def test_handler_notice_failure(
 
     assert press(application, 'UXXX1', threadvault.slack.view.DISCONNECTION_ACTION).status == 200
     assert channels == ['UXXX2']
+
+def test_handler_destination_offer(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database,
+    manager: threadvault.github.token.TokenManager
+) -> None:
+
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = 'xxx/xxx1'), update_user = 'UXXX1')
+    manager.save(TOKENS_SAVED)
+    options = json.loads(suggest(application, 'UXXX1', '').body)
+
+    with respx.mock:
+
+        respx.get(f'{threadvault.github.rest.API_URL}/user/installations').respond(200, json = INSTALLATIONS_RESPONDED)
+        respx.get(f'{threadvault.github.rest.API_URL}/user/installations/1/repositories').respond(200, json = REPOSITORIES_RESPONDED)
+
+        assert press(application, 'UXXX1', threadvault.slack.view.DESTINATION_ACTION).status == 200
+
+    assert options == {'options': []}
+    assert calls(workspace, 'views.open') == [{'trigger_id': 'xxx', 'view': threadvault.slack.view.offer(current = 'xxx/xxx1', language = 'ja')}]
+    assert json.loads(suggest(application, 'UXXX1', 'XXX2').body) == {'options': threadvault.slack.view.suggest(['xxx/xxx2'])}
+
+def test_handler_destination_choice(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database,
+    manager: threadvault.github.token.TokenManager
+) -> None:
+
+    manager.save(TOKENS_SAVED)
+
+    with respx.mock:
+
+        respx.get(f'{threadvault.github.rest.API_URL}/repos/xxx/xxx').respond(200, json = {'full_name': 'xxx/xxx', 'private': True})
+        respx.get(f'{threadvault.github.rest.API_URL}/user/installations').respond(200, json = INSTALLATIONS_RESPONDED)
+        response = submit(application, 'UXXX1', chosen('xxx/xxx'))
+
+    assert json.loads(response.body) == {'response_action': 'update', 'view': threadvault.slack.view.settle(repository = 'xxx/xxx', outcome = 'check', language = 'ja')}
+    assert threadvault.customisation.SettingsIO(database).load('TXXX').repository_name == 'xxx/xxx'
+    assert calls(workspace, 'views.update') == [{'view_id': 'VXXX', 'view': threadvault.slack.view.settle(repository = 'xxx/xxx', outcome = 'success', language = 'ja')}]
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'connected', destination = 'xxx/xxx', role = 'owner', slug = 'xxx', language = 'ja')}]
+    assert calls(workspace, 'chat.postMessage') == [{'channel': admin, 'text': threadvault.localisation.translate('notice.destination', 'ja', user = 'UXXX1', repository = 'xxx/xxx')} for admin in ('UXXX1', 'UXXX2')]
+
+def test_handler_destination_concurrency(
+    application: slack_bolt.App,
+    database: threadvault.storage.Database,
+    manager: threadvault.github.token.TokenManager
+) -> None:
+
+    def answer(
+        _: httpx.Request
+    ) -> httpx.Response:
+
+        threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(admins_allowed = ('UXXX2',)), update_user = 'UXXX1')
+
+        return httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True})
+
+    manager.save(TOKENS_SAVED)
+
+    with respx.mock:
+
+        respx.get(f'{threadvault.github.rest.API_URL}/repos/xxx/xxx').mock(side_effect = answer)
+        respx.get(f'{threadvault.github.rest.API_URL}/user/installations').respond(200, json = INSTALLATIONS_RESPONDED)
+
+        assert submit(application, 'UXXX1', chosen('xxx/xxx')).status == 200
+
+    assert threadvault.customisation.SettingsIO(database).load('TXXX') == threadvault.customisation.Settings(repository_name = 'xxx/xxx', admins_allowed = ('UXXX2',))
+
+@pytest.mark.parametrize(('repository', 'response', 'outcome', 'message'), DESTINATIONS_REFUSED)
+def test_handler_destination_refusal(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database,
+    manager: threadvault.github.token.TokenManager,
+    repository: str,
+    response: httpx.Response,
+    outcome: threadvault.slack.view.DestinationOutcome,
+    message: str
+) -> None:
+
+    manager.save(TOKENS_SAVED)
+
+    with respx.mock(assert_all_called = False) as router:
+
+        router.get(f'{threadvault.github.rest.API_URL}/repos/xxx/xxx').mock(return_value = response)
+
+        assert submit(application, 'UXXX1', chosen(repository)).status == 200
+
+    assert threadvault.customisation.SettingsIO(database).load('TXXX').repository_name is None
+    assert calls(workspace, 'views.update') == [{'view_id': 'VXXX', 'view': threadvault.slack.view.settle(repository = repository, outcome = outcome, language = 'ja', message = message)}]
+    assert calls(workspace, 'chat.postMessage') == []
 
 def test_handler_permission_grant(
     application: slack_bolt.App,
