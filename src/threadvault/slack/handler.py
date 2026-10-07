@@ -43,8 +43,8 @@ def register(
     `threadvault.slack.permission.restrict` makes sure. When the permissions
     or the ownership change, both the admin and the owner hear of it by
     direct message, and the owner and every admin hear by direct message
-    when GitHub is connected or disconnected, or when the destination
-    changes.
+    when GitHub is connected or disconnected, or when the destination is
+    chosen or created.
 
     Args:
         application: The application.
@@ -182,6 +182,47 @@ def register(
         show(modal, threadvault.slack.view.settle(repository = repository, outcome = 'success', language = language))
         notify(team, 'notice.destination', user, repository = repository)
 
+    def gather(
+        modal: str,
+        language: threadvault.configuration.Language
+    ) -> None:
+
+        try:
+
+            installations = threadvault.github.rest.installations(manager.acquire(datetime.datetime.now(datetime.UTC)))
+
+        except (threadvault.github.token.TokenError, threadvault.github.rest.GitHubError) as error:
+
+            show(modal, threadvault.slack.view.establish(repository = '', outcome = 'failure', language = language, message = str(error)))
+
+            return
+
+        show(modal, threadvault.slack.view.propose(accounts = sorted({installation['account']['login'] for installation in installations}, key = str.casefold), language = language))
+
+    def establish(
+        team: str,
+        user: str,
+        modal: str,
+        repository: str,
+        language: threadvault.configuration.Language
+    ) -> None:
+
+        try:
+
+            threadvault.customisation.Settings(repository_name = repository)
+            threadvault.github.rest.create(manager.acquire(datetime.datetime.now(datetime.UTC)), repository)
+
+        except (threadvault.customisation.SettingInvalidError, threadvault.github.token.TokenError, threadvault.github.rest.GitHubError) as error:
+
+            show(modal, threadvault.slack.view.establish(repository = repository, outcome = 'failure', language = language, message = str(error)))
+
+            return
+
+        store.save(team, dataclasses.replace(store.load(team), repository_name = repository), update_user = user)
+        refresh(team, user)
+        show(modal, threadvault.slack.view.establish(repository = repository, outcome = 'success', language = language))
+        notify(team, 'notice.creation', user, repository = repository)
+
     def publish(
         event: dict[str, typing.Any],
         context: slack_bolt.BoltContext
@@ -256,6 +297,40 @@ def register(
     ) -> None:
 
         ack(options = threadvault.slack.view.suggest(cache.search(payload.get('value', '')) or []))
+
+    def propose(
+        ack: slack_bolt.Ack,
+        body: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        ack()
+
+        if context.user_id is None: return
+
+        language = choose(context.user_id)
+        opening: dict[str, typing.Any] = application.client.views_open(trigger_id = body['trigger_id'], view = threadvault.slack.view.propose(accounts = None, language = language)).get('view', {})
+
+        detach(lambda: gather(opening['id'], language))
+
+    def create(
+        ack: slack_bolt.Ack,
+        view: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        team, user = context.team_id, context.user_id
+
+        if team is None or user is None: return
+
+        values = view['state']['values']
+        account: str = values[threadvault.slack.view.ACCOUNT_INPUT][threadvault.slack.view.ACCOUNT_INPUT]['selected_option']['value']
+        name: str = values[threadvault.slack.view.NAME_INPUT][threadvault.slack.view.NAME_INPUT]['value']
+        repository = f'{account}/{name}'
+        language = choose(user)
+
+        ack(response_action = 'update', view = threadvault.slack.view.establish(repository = repository, outcome = 'check', language = language))
+        detach(lambda: establish(team, user, view['id'], repository, language))
 
     def manage(
         ack: slack_bolt.Ack,
@@ -377,6 +452,8 @@ def register(
     application.action(threadvault.slack.view.DESTINATION_ACTION)(offer)
     application.view(threadvault.slack.view.DESTINATION_CALLBACK)(submit)
     application.options(threadvault.slack.view.REPOSITORY_ACTION)(suggest)
+    application.action(threadvault.slack.view.CREATION_ACTION)(propose)
+    application.view(threadvault.slack.view.CREATION_CALLBACK)(create)
     application.action(threadvault.slack.view.PERMISSIONS_ACTION, middleware = guard)(manage)
     application.view(threadvault.slack.view.PERMISSIONS_CALLBACK, middleware = guard)(review)
     application.view(threadvault.slack.view.PERMISSIONS_CONFIRMATION, middleware = guard)(apply)

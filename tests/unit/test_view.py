@@ -25,8 +25,8 @@ ROLES_MESSAGE = [
 ]
 
 VIEWERS_MESSAGE = [
-    ({'github': 'connected', 'role': 'owner'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Admin permissions', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', False)]),
-    ({'github': 'connected', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', False)]),
+    ({'github': 'connected', 'role': 'owner'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', False), (threadvault.slack.view.CREATION_ACTION, 'Create repository', False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Admin permissions', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', False)]),
+    ({'github': 'connected', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', False), (threadvault.slack.view.CREATION_ACTION, 'Create repository', False)]),
     ({'github': 'connected', 'role': 'admin'}, []),
     ({'github': 'disconnected', 'role': 'owner'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Admin permissions', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', False)]),
     ({'github': 'disconnected', 'role': 'operator'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', False)]),
@@ -57,6 +57,17 @@ OUTCOMES_DESTINATION = [
     ('absence', '', 'xxx/xxx was not found, or the GitHub App cannot access it.'),
     ('publicity', '', 'xxx/xxx is public. Backups go only into private repositories.'),
     ('failure', 'xxx', 'The repository could not be checked: xxx')
+]
+
+ACCOUNTS_CREATION = [
+    (None, ['Listing the accounts that have the GitHub App…']),
+    ([], ['The GitHub App is not installed on any account yet. Install it first.'])
+]
+
+OUTCOMES_CREATION = [
+    ('check', '', 'Creating xxx/xxx…'),
+    ('success', '', 'Created xxx/xxx. Backups now go there.'),
+    ('failure', 'xxx', 'The repository could not be created: xxx')
 ]
 
 ADMINS_ALLOWED = [
@@ -168,6 +179,38 @@ def test_view_destination_result(
 ) -> None:
 
     view = threadvault.slack.view.settle(repository = 'xxx/xxx', outcome = outcome, language = 'en', message = message)
+
+    assert view['type'] == 'modal'
+    assert [block['text']['text'] for block in view['blocks']] == [text]
+
+@pytest.mark.parametrize(('accounts', 'texts'), ACCOUNTS_CREATION)
+def test_view_creation_progress(
+    accounts: list[str] | None,
+    texts: list[str]
+) -> None:
+
+    view = threadvault.slack.view.propose(accounts = accounts, language = 'en')
+
+    assert 'submit' not in view
+    assert [block['text']['text'] for block in view['blocks']] == texts
+
+def test_view_creation_form() -> None:
+
+    view = threadvault.slack.view.propose(accounts = ['xxx1', 'xxx2'], language = 'en')
+    account, name = (block['element'] for block in view['blocks'])
+
+    assert view['callback_id'] == threadvault.slack.view.CREATION_CALLBACK
+    assert (account['action_id'], [option['value'] for option in account['options']], account['initial_option']['value']) == (threadvault.slack.view.ACCOUNT_INPUT, ['xxx1', 'xxx2'], 'xxx1')
+    assert (name['action_id'], name['max_length']) == (threadvault.slack.view.NAME_INPUT, 100)
+
+@pytest.mark.parametrize(('outcome', 'message', 'text'), OUTCOMES_CREATION)
+def test_view_creation_result(
+    outcome: threadvault.slack.view.CreationOutcome,
+    message: str,
+    text: str
+) -> None:
+
+    view = threadvault.slack.view.establish(repository = 'xxx/xxx', outcome = outcome, language = 'en', message = message)
 
     assert view['type'] == 'modal'
     assert [block['text']['text'] for block in view['blocks']] == [text]

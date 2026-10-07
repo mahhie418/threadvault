@@ -10,11 +10,14 @@ import threadvault.slack.permission
 
 type GitHubState = typing.Literal['connected', 'disconnected', 'expired', 'uninstalled']
 type DestinationOutcome = typing.Literal['check', 'success', 'absence', 'publicity', 'failure']
+type CreationOutcome = typing.Literal['check', 'success', 'failure']
 
 CONNECTION_ACTION = 'connection_action'
 DISCONNECTION_ACTION = 'disconnection_action'
 DESTINATION_ACTION = 'destination_action'
 DESTINATION_CALLBACK = 'destination_callback'
+CREATION_ACTION = 'creation_action'
+CREATION_CALLBACK = 'creation_callback'
 PERMISSIONS_ACTION = 'permissions_action'
 PERMISSIONS_CALLBACK = 'permissions_callback'
 PERMISSIONS_CONFIRMATION = 'permissions_confirmation'
@@ -23,12 +26,15 @@ TRANSFER_ACTION = 'transfer_action'
 TRANSFER_CALLBACK = 'transfer_callback'
 TRANSFER_CONFIRMATION = 'transfer_confirmation'
 
+ACCOUNT_INPUT = 'account_input'
 ADMINS_INPUT = 'admins_input'
 SUCCESSOR_INPUT = 'successor_input'
+NAME_INPUT = 'name_input'
 
 _OPTION_LIMIT = 100
 _DISPLAY_LIMIT = 75
 _CHECKBOX_LIMIT = 10
+_NAME_LIMIT = 100
 
 def home(
     *,
@@ -44,9 +50,9 @@ def home(
     The owner and the admins also see the destination and their own role.
     The owner and the admins allowed to operate the app see a button that
     connects GitHub, connects it again once the connection has stopped
-    working, or disconnects it, a button that chooses the destination while
-    GitHub is connected, and a link to install the GitHub App while it has
-    no installation. The owner also sees buttons that choose the admins
+    working, or disconnects it, buttons that choose or create the destination
+    while GitHub is connected, and a link to install the GitHub App while it
+    has no installation. The owner also sees buttons that choose the admins
     allowed to operate the app and that transfer the ownership to an admin.
 
     Args:
@@ -81,7 +87,7 @@ def home(
 
     buttons = [_button(github = github, language = language)]
 
-    if github == 'connected': buttons.append({'type': 'button', 'action_id': DESTINATION_ACTION, 'text': _plain(threadvault.localisation.translate('home.destination.choice', language))})
+    if github == 'connected': buttons.extend({'type': 'button', 'action_id': action, 'text': _plain(threadvault.localisation.translate(key, language))} for action, key in ((DESTINATION_ACTION, 'home.destination.choice'), (CREATION_ACTION, 'home.destination.creation')))
     if role in ('owner', 'operator'): blocks.append({'type': 'actions', 'elements': buttons})
     if role in ('owner', 'operator') and github == 'uninstalled': blocks.append({'type': 'section', 'text': _text(threadvault.localisation.translate('home.installation', language), threadvault.localisation.translate('home.installation.missing', language, url = f'https://github.com/apps/{slug}/installations/new'))})
     if role == 'owner': blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': action, 'text': _plain(threadvault.localisation.translate(key, language))} for action, key in ((PERMISSIONS_ACTION, 'home.permissions'), (TRANSFER_ACTION, 'home.transfer'))]})
@@ -161,10 +167,10 @@ def suggest(
     names: list[str]
 ) -> list[dict[str, typing.Any]]:
 
-    """Builds the options of the repository menu, as many as Slack takes.
+    """Builds the options of a menu, as many as Slack takes.
 
     Args:
-        names: Repositories, as owner/name.
+        names: Repositories as owner/name, or GitHub accounts.
 
     Returns:
         The options, as an options response takes them.
@@ -196,6 +202,56 @@ def settle(
     """
 
     return _modal(threadvault.localisation.translate('destination.title', language), threadvault.localisation.translate(f'destination.{outcome}', language, repository = repository, message = message), language)
+
+def propose(
+    *,
+    accounts: list[str] | None,
+    language: threadvault.configuration.Language
+) -> dict[str, typing.Any]:
+
+    """Builds the modal that creates a private repository for the destination, while the accounts are listed and once they are.
+
+    Args:
+        accounts: Accounts that have the GitHub App, as GitHub names them,
+                  or None until GitHub lists them.
+        language: Language of the admin.
+
+    Returns:
+        The view, as views.open and views.update take it.
+    """
+
+    title = threadvault.localisation.translate('creation.title', language)
+
+    if accounts is None: return _modal(title, threadvault.localisation.translate('creation.request', language), language)
+    if not accounts: return _modal(title, threadvault.localisation.translate('creation.absence', language), language)
+
+    account = {'type': 'input', 'block_id': ACCOUNT_INPUT, 'label': _plain(threadvault.localisation.translate('creation.account', language)), 'element': {'type': 'static_select', 'action_id': ACCOUNT_INPUT, 'options': suggest(accounts), 'initial_option': _option(accounts[0])}}
+    name = {'type': 'input', 'block_id': NAME_INPUT, 'label': _plain(threadvault.localisation.translate('creation.name', language)), 'hint': _plain(threadvault.localisation.translate('creation.hint', language)), 'element': {'type': 'plain_text_input', 'action_id': NAME_INPUT, 'max_length': _NAME_LIMIT}}
+
+    return {'type': 'modal', 'callback_id': CREATION_CALLBACK, 'title': _plain(title), 'submit': _plain(threadvault.localisation.translate('creation.submit', language)), 'close': _plain(threadvault.localisation.translate('creation.close', language)), 'blocks': [account, name]}
+
+def establish(
+    *,
+    repository: str,
+    outcome: CreationOutcome,
+    language: threadvault.configuration.Language,
+    message: str = ''
+) -> dict[str, typing.Any]:
+
+    """Builds the modal that creates a private repository for the destination, once it is submitted.
+
+    Args:
+        repository: The repository, as owner/name.
+        outcome: Where the creation stands: check while it runs, success
+                 once the repository is the destination, or failure.
+        language: Language of the admin.
+        message: Why the repository could not be created.
+
+    Returns:
+        The view, as an update response and views.update take it.
+    """
+
+    return _modal(threadvault.localisation.translate('creation.title', language), threadvault.localisation.translate(f'creation.{outcome}', language, repository = repository, message = message), language)
 
 def permit(
     *,
