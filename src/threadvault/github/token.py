@@ -11,6 +11,7 @@ import threadvault.storage
 EXPIRY_MARGIN = datetime.timedelta(minutes = 5)
 
 _TOKENS_SELECT = 'SELECT credential_data FROM github WHERE credential_id = 1'
+_TOKENS_DELETE = 'DELETE FROM github WHERE credential_id = 1'
 
 _TOKENS_UPSERT = """
     INSERT INTO github (credential_id, credential_data, update_time)
@@ -101,6 +102,19 @@ class TokenManager:
             self.save(tokens)
 
         return tokens.access_token
+
+    def delete(
+        self
+    ) -> None:
+
+        """Deletes the tokens, so that GitHub is no longer connected.
+
+        A refresh that is under way finishes first, so that its new pair is
+        deleted too rather than saved afterwards. GitHub keeps the
+        authorisation until the user revokes it on GitHub.
+        """
+
+        with self._LOCK, self._database.begin() as connection: connection.execute(_TOKENS_DELETE)
 
     def connected(
         self

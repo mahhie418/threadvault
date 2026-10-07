@@ -9,6 +9,7 @@ import threadvault.localisation
 import threadvault.slack.permission
 
 CONNECTION_ACTION = 'connection_action'
+DISCONNECTION_ACTION = 'disconnection_action'
 PERMISSIONS_ACTION = 'permissions_action'
 PERMISSIONS_CALLBACK = 'permissions_callback'
 PERMISSIONS_CONFIRMATION = 'permissions_confirmation'
@@ -33,9 +34,9 @@ def home(
 
     The owner and the admins also see the destination and their own role.
     The owner and the admins allowed to operate the app see a button that
-    connects GitHub while it is not connected, and the owner also sees
-    buttons that choose the admins allowed to operate the app and that
-    transfer the ownership to an admin.
+    connects GitHub, or that disconnects it once it is connected, and the
+    owner also sees buttons that choose the admins allowed to operate the
+    app and that transfer the ownership to an admin.
 
     Args:
         connected: Whether GitHub is connected.
@@ -57,7 +58,7 @@ def home(
 
     blocks.append({'type': 'section', 'fields': [{'type': 'mrkdwn', 'text': f'*{title}*\n{text}'} for title, text in fields]})
 
-    if role in ('owner', 'operator') and not connected: blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': CONNECTION_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.github.connection', language))}]})
+    if role in ('owner', 'operator'): blocks.append({'type': 'actions', 'elements': [_button(connected = connected, language = language)]})
     if role == 'owner': blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': action, 'text': _plain(threadvault.localisation.translate(key, language))} for action, key in ((PERMISSIONS_ACTION, 'home.permissions'), (TRANSFER_ACTION, 'home.transfer'))]})
 
     return {'type': 'home', 'blocks': blocks}
@@ -206,6 +207,18 @@ def nominate(
     """
 
     return {'type': 'modal', 'callback_id': TRANSFER_CONFIRMATION, 'private_metadata': successor, 'title': _plain(threadvault.localisation.translate('transfer.title', language)), 'submit': _plain(threadvault.localisation.translate('transfer.confirm', language)), 'close': _plain(threadvault.localisation.translate('transfer.back', language)), 'blocks': [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': threadvault.localisation.translate('transfer.question', language, user = successor)}}]}
+
+def _button(
+    *,
+    connected: bool,
+    language: threadvault.configuration.Language
+) -> dict[str, typing.Any]:
+
+    if not connected: return {'type': 'button', 'action_id': CONNECTION_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.github.connection', language))}
+
+    confirmation = {'title': _plain(threadvault.localisation.translate('disconnection.title', language)), 'text': _plain(threadvault.localisation.translate('disconnection.text', language)), 'confirm': _plain(threadvault.localisation.translate('disconnection.confirm', language)), 'deny': _plain(threadvault.localisation.translate('disconnection.deny', language)), 'style': 'danger'}
+
+    return {'type': 'button', 'action_id': DISCONNECTION_ACTION, 'style': 'danger', 'text': _plain(threadvault.localisation.translate('home.github.disconnection', language)), 'confirm': confirmation}
 
 def _choice(
     user: str

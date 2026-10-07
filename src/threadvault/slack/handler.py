@@ -133,6 +133,18 @@ def register(
 
         detach(lambda: link(team, user, opening['id'], language))
 
+    def disconnect(
+        ack: slack_bolt.Ack,
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        ack()
+
+        if context.team_id is None or context.user_id is None: return
+
+        manager.delete()
+        refresh(context.team_id, context.user_id)
+
     def manage(
         ack: slack_bolt.Ack,
         body: dict[str, typing.Any],
@@ -249,6 +261,7 @@ def register(
     application.use(threadvault.slack.permission.restrict(settings, store, frozenset({'owner', 'operator'})))
     application.event('app_home_opened')(publish)
     application.action(threadvault.slack.view.CONNECTION_ACTION)(connect)
+    application.action(threadvault.slack.view.DISCONNECTION_ACTION)(disconnect)
     application.action(threadvault.slack.view.PERMISSIONS_ACTION, middleware = guard)(manage)
     application.view(threadvault.slack.view.PERMISSIONS_CALLBACK, middleware = guard)(review)
     application.view(threadvault.slack.view.PERMISSIONS_CONFIRMATION, middleware = guard)(apply)

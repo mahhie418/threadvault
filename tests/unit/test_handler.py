@@ -189,6 +189,18 @@ def test_handler_github_connection(
     assert calls(workspace, 'views.update') == [{'view_id': 'VXXX', 'view': threadvault.slack.view.connect(code = CODE, language = 'ja')}, {'view_id': 'VXXX', 'view': threadvault.slack.view.respond(error = None, language = 'ja')}]
     assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(connected = True, destination = None, role = 'owner', language = 'ja')}]
 
+def test_handler_github_disconnection(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    manager: threadvault.github.token.TokenManager
+) -> None:
+
+    manager.save(TOKENS_SAVED)
+
+    assert press(application, 'UXXX1', threadvault.slack.view.DISCONNECTION_ACTION).status == 200
+    assert not manager.connected()
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(connected = False, destination = None, role = 'owner', language = 'ja')}]
+
 @pytest.mark.parametrize(('code', 'tokens', 'reason'), CONNECTIONS_FAILED)
 def test_handler_github_failure(
     application: slack_bolt.App,

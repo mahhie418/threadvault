@@ -23,10 +23,11 @@ ROLES_MESSAGE = [
 ]
 
 VIEWERS_MESSAGE = [
-    ({'connected': True, 'role': 'owner'}, [threadvault.slack.view.PERMISSIONS_ACTION, threadvault.slack.view.TRANSFER_ACTION]),
-    ({'connected': False, 'role': 'owner'}, [threadvault.slack.view.CONNECTION_ACTION, threadvault.slack.view.PERMISSIONS_ACTION, threadvault.slack.view.TRANSFER_ACTION]),
-    ({'connected': False, 'role': 'operator'}, [threadvault.slack.view.CONNECTION_ACTION]),
-    ({'connected': False, 'role': 'admin'}, []),
+    ({'connected': True, 'role': 'owner'}, [(threadvault.slack.view.DISCONNECTION_ACTION, True), (threadvault.slack.view.PERMISSIONS_ACTION, False), (threadvault.slack.view.TRANSFER_ACTION, False)]),
+    ({'connected': True, 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, True)]),
+    ({'connected': True, 'role': 'admin'}, []),
+    ({'connected': False, 'role': 'owner'}, [(threadvault.slack.view.CONNECTION_ACTION, False), (threadvault.slack.view.PERMISSIONS_ACTION, False), (threadvault.slack.view.TRANSFER_ACTION, False)]),
+    ({'connected': False, 'role': 'operator'}, [(threadvault.slack.view.CONNECTION_ACTION, False)]),
     ({'connected': False, 'role': 'member'}, [])
 ]
 
@@ -69,15 +70,15 @@ def test_view_home_role(
 
     assert [element['text'] for block in view['blocks'] if block['type'] == 'context' for element in block['elements']] == texts
 
-@pytest.mark.parametrize(('state', 'actions'), VIEWERS_MESSAGE)
+@pytest.mark.parametrize(('state', 'buttons'), VIEWERS_MESSAGE)
 def test_view_home_connection(
     state: dict[str, typing.Any],
-    actions: list[str]
+    buttons: list[tuple[str, bool]]
 ) -> None:
 
     view = threadvault.slack.view.home(**state, destination = None, language = 'en')
 
-    assert [element['action_id'] for block in view['blocks'] if block['type'] == 'actions' for element in block['elements']] == actions
+    assert [(element['action_id'], 'confirm' in element) for block in view['blocks'] if block['type'] == 'actions' for element in block['elements']] == buttons
 
 @pytest.mark.parametrize(('code', 'text'), CONNECTIONS_MESSAGE)
 def test_view_connection_establishment(
