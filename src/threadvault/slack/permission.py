@@ -10,6 +10,43 @@ import threadvault.customisation
 
 type Role = typing.Literal['owner', 'operator', 'admin', 'member']
 
+def owner(
+    settings: threadvault.configuration.Settings,
+    workspace: threadvault.customisation.Settings
+) -> str:
+
+    """Tells who owns the app.
+
+    Args:
+        settings: Settings of the deployment.
+        workspace: Settings of the workspace, with the owner since a transfer.
+
+    Returns:
+        Slack user ID of the owner: the admin to whom the ownership was last
+        transferred, or the user in THREADVAULT_OWNER_ID before any transfer.
+    """
+
+    return workspace.owner_id or settings.threadvault_owner_id
+
+def admins(
+    settings: threadvault.configuration.Settings,
+    workspace: threadvault.customisation.Settings
+) -> frozenset[str]:
+
+    """Tells who the admins are, the owner among them.
+
+    Args:
+        settings: Settings of the deployment.
+        workspace: Settings of the workspace, with the owner since a transfer.
+
+    Returns:
+        Slack user IDs of the users in THREADVAULT_ADMIN_IDS, of the user in
+        THREADVAULT_OWNER_ID, who stays an admin after a transfer, and of the
+        owner.
+    """
+
+    return settings.threadvault_admin_ids | {settings.threadvault_owner_id, owner(settings, workspace)}
+
 def role(
     settings: threadvault.configuration.Settings,
     workspace: threadvault.customisation.Settings,
@@ -20,18 +57,16 @@ def role(
 
     Args:
         settings: Settings of the deployment.
-        workspace: Settings of the workspace, with the admins allowed to operate the app.
+        workspace: Settings of the workspace, with the owner since a transfer and the admins allowed to operate the app.
         user: Slack user ID.
 
     Returns:
-        owner for the user in THREADVAULT_OWNER_ID, who installed the app,
-        operator for the admins whom the owner allows to operate the app,
-        admin for the other users in THREADVAULT_ADMIN_IDS, or member for
-        anyone else.
+        owner for the owner, operator for the admins whom the owner allows to
+        operate the app, admin for the other admins, or member for anyone else.
     """
 
-    if user == settings.threadvault_owner_id: return 'owner'
-    if user not in settings.threadvault_admin_ids: return 'member'
+    if user == owner(settings, workspace): return 'owner'
+    if user not in admins(settings, workspace): return 'member'
 
     return 'operator' if user in workspace.admins_allowed else 'admin'
 

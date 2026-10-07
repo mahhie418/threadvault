@@ -41,7 +41,7 @@ class Settings:
         slack_app_token: Slack app-level token (xapp-...) for Socket Mode.
         github_app_client_id: Client ID of the admins' GitHub App.
         github_app_slug: URL slug of the admins' GitHub App.
-        threadvault_owner_id: Slack user ID of the owner of the app, who installed it.
+        threadvault_owner_id: Slack user ID of the user who installed the app: the first owner, and an admin even after a transfer.
         threadvault_admin_ids: Slack user IDs that may change settings.
         secret_key: Key that encrypts stored secrets,
                     or None to use the key file in the data directory.

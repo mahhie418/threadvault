@@ -47,6 +47,13 @@ CONNECTIONS_FAILED = [
     (CODE_ISSUED, {'error': 'expired_token', 'error_description': 'xxx'}, 'expired_token')
 ]
 
+TRANSFERS_ALLOWED = [
+    ((), ('UXXX1',)),
+    (('UXXX2', 'UXXX3'), ('UXXX1', 'UXXX3'))
+]
+
+SUCCESSORS_INVALID = ['UXXX1', 'UXXX3']
+
 @pytest.fixture
 def application(
     monkeypatch: pytest.MonkeyPatch,
@@ -111,6 +118,12 @@ def checked(
 ) -> dict[str, typing.Any]:
 
     return {'callback_id': threadvault.slack.view.PERMISSIONS_CALLBACK, 'state': {'values': {f'{threadvault.slack.view.ADMINS_INPUT}0': {threadvault.slack.view.ADMINS_INPUT: {'type': 'checkboxes', 'selected_options': [{'value': user} for user in users]}}}}}
+
+def selected(
+    user: str
+) -> dict[str, typing.Any]:
+
+    return {'callback_id': threadvault.slack.view.TRANSFER_CALLBACK, 'state': {'values': {threadvault.slack.view.SUCCESSOR_INPUT: {threadvault.slack.view.SUCCESSOR_INPUT: {'type': 'users_select', 'selected_user': user}}}}}
 
 def calls(
     workspace: dict[str, typing.Any],
@@ -300,6 +313,65 @@ def test_handler_permission_owner(
     assert submit(application, 'UXXX2', threadvault.slack.view.review(granted = [], revoked = ['UXXX2'], language = 'ja')).status == 200
     assert calls(workspace, 'views.open') == []
     assert threadvault.customisation.SettingsIO(database).load('TXXX').admins_allowed == ('UXXX2',)
+
+def test_handler_permission_successor(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database
+) -> None:
+
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(owner_id = 'UXXX2', admins_allowed = ('UXXX1',)), update_user = 'UXXX1')
+
+    assert press(application, 'UXXX2', threadvault.slack.view.PERMISSIONS_ACTION).status == 200
+    assert calls(workspace, 'views.open') == [{'trigger_id': 'xxx', 'view': threadvault.slack.view.permit(admins = ['UXXX1'], allowed = ('UXXX1',), language = 'ja')}]
+    assert json.loads(submit(application, 'UXXX2', checked([])).body) == {'response_action': 'push', 'view': threadvault.slack.view.review(granted = [], revoked = ['UXXX1'], language = 'ja')}
+
+@pytest.mark.parametrize(('allowed', 'expected'), TRANSFERS_ALLOWED)
+def test_handler_transfer_completion(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database,
+    allowed: tuple[str, ...],
+    expected: tuple[str, ...]
+) -> None:
+
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(admins_allowed = allowed), update_user = 'UXXX1')
+
+    assert press(application, 'UXXX1', threadvault.slack.view.TRANSFER_ACTION).status == 200
+    assert calls(workspace, 'views.open') == [{'trigger_id': 'xxx', 'view': threadvault.slack.view.cede(language = 'ja')}]
+
+    nomination = submit(application, 'UXXX1', selected('UXXX2'))
+    confirmation = threadvault.slack.view.nominate(successor = 'UXXX2', language = 'ja')
+
+    assert json.loads(nomination.body) == {'response_action': 'push', 'view': confirmation}
+    assert json.loads(submit(application, 'UXXX1', confirmation).body) == {'response_action': 'clear'}
+    assert threadvault.customisation.SettingsIO(database).load('TXXX') == threadvault.customisation.Settings(owner_id = 'UXXX2', admins_allowed = expected)
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(connected = False, destination = None, role = 'operator', language = 'ja')}, {'user_id': 'UXXX2', 'view': threadvault.slack.view.home(connected = False, destination = None, role = 'owner', language = 'ja')}]
+    assert calls(workspace, 'chat.postMessage') == [{'channel': 'UXXX2', 'text': threadvault.localisation.translate('notice.ownership', 'ja', owner = 'UXXX1', product = threadvault.product.NAME)}, {'channel': 'UXXX1', 'text': threadvault.localisation.translate('notice.ownership.done', 'ja', user = 'UXXX2', product = threadvault.product.NAME)}]
+
+@pytest.mark.parametrize('successor', SUCCESSORS_INVALID)
+def test_handler_transfer_refusal(
+    application: slack_bolt.App,
+    successor: str
+) -> None:
+
+    nomination = submit(application, 'UXXX1', selected(successor))
+
+    assert json.loads(nomination.body) == {'response_action': 'errors', 'errors': {threadvault.slack.view.SUCCESSOR_INPUT: threadvault.localisation.translate('transfer.invalid', 'ja')}}
+
+def test_handler_transfer_owner(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database
+) -> None:
+
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(admins_allowed = ('UXXX2',)), update_user = 'UXXX1')
+
+    assert press(application, 'UXXX2', threadvault.slack.view.TRANSFER_ACTION).status == 200
+    assert submit(application, 'UXXX2', selected('UXXX2')).body == ''
+    assert submit(application, 'UXXX2', threadvault.slack.view.nominate(successor = 'UXXX2', language = 'ja')).status == 200
+    assert calls(workspace, 'views.open') == []
+    assert threadvault.customisation.SettingsIO(database).load('TXXX').owner_id is None
 
 def test_handler_thread_detachment() -> None:
 

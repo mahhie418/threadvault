@@ -12,8 +12,12 @@ CONNECTION_ACTION = 'connection_action'
 PERMISSIONS_ACTION = 'permissions_action'
 PERMISSIONS_CALLBACK = 'permissions_callback'
 PERMISSIONS_CONFIRMATION = 'permissions_confirmation'
+TRANSFER_ACTION = 'transfer_action'
+TRANSFER_CALLBACK = 'transfer_callback'
+TRANSFER_CONFIRMATION = 'transfer_confirmation'
 
 ADMINS_INPUT = 'admins_input'
+SUCCESSOR_INPUT = 'successor_input'
 
 _CHECKBOX_LIMIT = 10
 
@@ -29,8 +33,9 @@ def home(
 
     The owner and the admins also see the destination and their own role.
     The owner and the admins allowed to operate the app see a button that
-    connects GitHub while it is not connected, and the owner also sees a
-    button that chooses the admins allowed to operate the app.
+    connects GitHub while it is not connected, and the owner also sees
+    buttons that choose the admins allowed to operate the app and that
+    transfer the ownership to an admin.
 
     Args:
         connected: Whether GitHub is connected.
@@ -53,7 +58,7 @@ def home(
     blocks.append({'type': 'section', 'fields': [{'type': 'mrkdwn', 'text': f'*{title}*\n{text}'} for title, text in fields]})
 
     if role in ('owner', 'operator') and not connected: blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': CONNECTION_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.github.connection', language))}]})
-    if role == 'owner': blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': PERMISSIONS_ACTION, 'text': _plain(threadvault.localisation.translate('home.permissions', language))}]})
+    if role == 'owner': blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': action, 'text': _plain(threadvault.localisation.translate(key, language))} for action, key in ((PERMISSIONS_ACTION, 'home.permissions'), (TRANSFER_ACTION, 'home.transfer'))]})
 
     return {'type': 'home', 'blocks': blocks}
 
@@ -163,6 +168,44 @@ def review(
     text = '\n'.join([threadvault.localisation.translate('permissions.question', language), *(f'• {line}' for line in lines)])
 
     return {'type': 'modal', 'callback_id': PERMISSIONS_CONFIRMATION, 'private_metadata': json.dumps({'granted': granted, 'revoked': revoked}), 'title': _plain(threadvault.localisation.translate('permissions.title', language)), 'submit': _plain(threadvault.localisation.translate('permissions.confirm', language)), 'close': _plain(threadvault.localisation.translate('permissions.back', language)), 'blocks': [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': text}}]}
+
+def cede(
+    *,
+    language: threadvault.configuration.Language
+) -> dict[str, typing.Any]:
+
+    """Builds the modal in which the owner chooses the admin who becomes the owner.
+
+    Args:
+        language: Language of the owner.
+
+    Returns:
+        The view, as views.open takes it.
+    """
+
+    blocks = [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': threadvault.localisation.translate('transfer.description', language)}}, {'type': 'input', 'block_id': SUCCESSOR_INPUT, 'label': _plain(threadvault.localisation.translate('transfer.label', language)), 'element': {'type': 'users_select', 'action_id': SUCCESSOR_INPUT}}]
+
+    return {'type': 'modal', 'callback_id': TRANSFER_CALLBACK, 'title': _plain(threadvault.localisation.translate('transfer.title', language)), 'submit': _plain(threadvault.localisation.translate('transfer.submit', language)), 'close': _plain(threadvault.localisation.translate('transfer.close', language)), 'blocks': blocks}
+
+def nominate(
+    *,
+    successor: str,
+    language: threadvault.configuration.Language
+) -> dict[str, typing.Any]:
+
+    """Builds the view that asks the owner to confirm the transfer of the ownership.
+
+    The successor travels with the view, so that confirming it transfers the ownership to them.
+
+    Args:
+        successor: Slack user ID of the admin who becomes the owner.
+        language: Language of the owner.
+
+    Returns:
+        The view, as a push response takes it.
+    """
+
+    return {'type': 'modal', 'callback_id': TRANSFER_CONFIRMATION, 'private_metadata': successor, 'title': _plain(threadvault.localisation.translate('transfer.title', language)), 'submit': _plain(threadvault.localisation.translate('transfer.confirm', language)), 'close': _plain(threadvault.localisation.translate('transfer.back', language)), 'blocks': [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': threadvault.localisation.translate('transfer.question', language, user = successor)}}]}
 
 def _choice(
     user: str

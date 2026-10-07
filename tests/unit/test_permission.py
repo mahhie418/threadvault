@@ -12,9 +12,17 @@ import threadvault.customisation
 import threadvault.slack.permission
 import threadvault.storage
 
-WORKSPACE = threadvault.customisation.Settings(admins_allowed = ('UXXX2', 'UXXX4'))
+WORKSPACE_SET = threadvault.customisation.Settings(admins_allowed = ('UXXX2', 'UXXX4'))
+WORKSPACE_TRANSFERRED = threadvault.customisation.Settings(owner_id = 'UXXX2', admins_allowed = ('UXXX1',))
 
 USERS_CLASSIFIED = [('UXXX1', 'owner'), ('UXXX2', 'operator'), ('UXXX3', 'admin'), ('UXXX4', 'member')]
+USERS_TRANSFERRED = [('UXXX1', 'operator'), ('UXXX2', 'owner'), ('UXXX3', 'admin'), ('UXXX4', 'member')]
+
+OWNERS_STORED = [
+    (None, 'UXXX1', frozenset({'UXXX1', 'UXXX2', 'UXXX3'})),
+    ('UXXX2', 'UXXX2', frozenset({'UXXX1', 'UXXX2', 'UXXX3'})),
+    ('UXXX5', 'UXXX5', frozenset({'UXXX1', 'UXXX2', 'UXXX3', 'UXXX5'}))
+]
 
 REQUESTS_PERMITTED = [
     ({'type': 'event_callback', 'team_id': 'TXXX', 'event': {'type': 'app_home_opened', 'user': 'UXXX4', 'channel': 'DXXX', 'tab': 'home'}}, frozenset({'owner'}), ['UXXX4']),
@@ -37,7 +45,7 @@ def store(
 
     database = threadvault.storage.Database(pathlib.Path(os.path.join(tmp_path, threadvault.storage.DATABASE_FILE)))
     opening = threadvault.customisation.SettingsIO(database)
-    opening.save('TXXX', WORKSPACE, update_user = 'UXXX1'); yield opening
+    opening.save('TXXX', WORKSPACE_SET, update_user = 'UXXX1'); yield opening
     database.close()
 
 @pytest.mark.parametrize(('user', 'role'), USERS_CLASSIFIED)
@@ -47,7 +55,29 @@ def test_permission_user_role(
     role: threadvault.slack.permission.Role
 ) -> None:
 
-    assert threadvault.slack.permission.role(settings, WORKSPACE, user) == role
+    assert threadvault.slack.permission.role(settings, WORKSPACE_SET, user) == role
+
+@pytest.mark.parametrize(('user', 'role'), USERS_TRANSFERRED)
+def test_permission_transfer_role(
+    settings: threadvault.configuration.Settings,
+    user: str,
+    role: threadvault.slack.permission.Role
+) -> None:
+
+    assert threadvault.slack.permission.role(settings, WORKSPACE_TRANSFERRED, user) == role
+
+@pytest.mark.parametrize(('stored', 'owner', 'admins'), OWNERS_STORED)
+def test_permission_transfer_owner(
+    settings: threadvault.configuration.Settings,
+    stored: str | None,
+    owner: str,
+    admins: frozenset[str]
+) -> None:
+
+    workspace = threadvault.customisation.Settings(owner_id = stored)
+
+    assert threadvault.slack.permission.owner(settings, workspace) == owner
+    assert threadvault.slack.permission.admins(settings, workspace) == admins
 
 @pytest.mark.parametrize(('body', 'roles', 'users'), REQUESTS_PERMITTED)
 def test_permission_request_restriction(

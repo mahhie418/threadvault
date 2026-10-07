@@ -36,9 +36,10 @@ def register(
     a view shows depends on the role of its viewer, and each view is in the
     language of the Slack locale of its viewer. Only the owner and the admins
     allowed to operate the app act in it, and only the owner changes the
-    permissions of the admins, as `threadvault.slack.permission.restrict`
-    makes sure. When the permissions change, both the admin and the owner
-    hear of it by direct message.
+    permissions of the admins and transfers the ownership to an admin, as
+    `threadvault.slack.permission.restrict` makes sure. When the permissions
+    or the ownership change, both the admin and the owner hear of it by
+    direct message.
 
     Args:
         application: The application.
@@ -142,9 +143,10 @@ def register(
 
         if context.team_id is None or context.user_id is None: return
 
-        admins = sorted(settings.threadvault_admin_ids - {settings.threadvault_owner_id})
+        workspace = store.load(context.team_id)
+        admins = sorted(threadvault.slack.permission.admins(settings, workspace) - {threadvault.slack.permission.owner(settings, workspace)})
 
-        application.client.views_open(trigger_id = body['trigger_id'], view = threadvault.slack.view.permit(admins = admins, allowed = store.load(context.team_id).admins_allowed, language = choose(context.user_id)))
+        application.client.views_open(trigger_id = body['trigger_id'], view = threadvault.slack.view.permit(admins = admins, allowed = workspace.admins_allowed, language = choose(context.user_id)))
 
     def review(
         ack: slack_bolt.Ack,
@@ -154,8 +156,9 @@ def register(
 
         if context.team_id is None or context.user_id is None: return
 
-        admins = settings.threadvault_admin_ids - {settings.threadvault_owner_id}
-        allowed = set(store.load(context.team_id).admins_allowed) & admins
+        workspace = store.load(context.team_id)
+        admins = threadvault.slack.permission.admins(settings, workspace) - {threadvault.slack.permission.owner(settings, workspace)}
+        allowed = set(workspace.admins_allowed) & admins
         values: dict[str, dict[str, dict[str, typing.Any]]] = view['state']['values']
         chosen = {option['value'] for block in values.values() for element in block.values() for option in element['selected_options']}
         granted, revoked = sorted(chosen - allowed), sorted(allowed - chosen)
@@ -193,12 +196,65 @@ def register(
             tell(user, 'notice.revocation', owner = owner, product = threadvault.product.NAME)
             tell(owner, 'notice.revocation.done', user = user, product = threadvault.product.NAME)
 
+    def cede(
+        ack: slack_bolt.Ack,
+        body: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        ack()
+
+        if context.user_id is None: return
+
+        application.client.views_open(trigger_id = body['trigger_id'], view = threadvault.slack.view.cede(language = choose(context.user_id)))
+
+    def nominate(
+        ack: slack_bolt.Ack,
+        view: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        if context.team_id is None or context.user_id is None: return
+
+        workspace = store.load(context.team_id)
+        admins = threadvault.slack.permission.admins(settings, workspace) - {threadvault.slack.permission.owner(settings, workspace)}
+        successor: str = view['state']['values'][threadvault.slack.view.SUCCESSOR_INPUT][threadvault.slack.view.SUCCESSOR_INPUT]['selected_user']
+        language = choose(context.user_id)
+
+        if successor in admins: ack(response_action = 'push', view = threadvault.slack.view.nominate(successor = successor, language = language))
+        else: ack(response_action = 'errors', errors = {threadvault.slack.view.SUCCESSOR_INPUT: threadvault.localisation.translate('transfer.invalid', language)})
+
+    def transfer(
+        ack: slack_bolt.Ack,
+        view: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        team, former = context.team_id, context.user_id
+
+        if team is None or former is None: return
+
+        successor: str = view['private_metadata']
+        workspace = store.load(team)
+        allowed = (set(workspace.admins_allowed) | {former}) - {successor}
+
+        store.save(team, dataclasses.replace(workspace, owner_id = successor, admins_allowed = tuple(sorted(allowed))), update_user = former)
+        ack(response_action = 'clear')
+
+        for user in [former, successor]: refresh(team, user)
+
+        tell(successor, 'notice.ownership', owner = former, product = threadvault.product.NAME)
+        tell(former, 'notice.ownership.done', user = successor, product = threadvault.product.NAME)
+
     application.use(threadvault.slack.permission.restrict(settings, store, frozenset({'owner', 'operator'})))
     application.event('app_home_opened')(publish)
     application.action(threadvault.slack.view.CONNECTION_ACTION)(connect)
     application.action(threadvault.slack.view.PERMISSIONS_ACTION, middleware = guard)(manage)
     application.view(threadvault.slack.view.PERMISSIONS_CALLBACK, middleware = guard)(review)
     application.view(threadvault.slack.view.PERMISSIONS_CONFIRMATION, middleware = guard)(apply)
+    application.action(threadvault.slack.view.TRANSFER_ACTION, middleware = guard)(cede)
+    application.view(threadvault.slack.view.TRANSFER_CALLBACK, middleware = guard)(nominate)
+    application.view(threadvault.slack.view.TRANSFER_CONFIRMATION, middleware = guard)(transfer)
 
 def detach(
     function: collections.abc.Callable[[], None]

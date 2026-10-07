@@ -16,9 +16,12 @@
   "home.role.admin": "You are an admin without permission to operate the app.",
   "home.role.operator": "You are an admin with permission to operate the app.",
   "home.role.owner": "You are the owner.",
+  "home.transfer": "Transfer ownership",
   "modal.close": "Close",
   "notice.grant": "<@{owner}> allowed you to operate {product}.",
   "notice.grant.done": "You allowed <@{user}> to operate {product}.",
+  "notice.ownership": "<@{owner}> transferred the ownership of {product} to you.",
+  "notice.ownership.done": "You transferred the ownership of {product} to <@{user}>.",
   "notice.revocation": "<@{owner}> withdrew your permission to operate {product}.",
   "notice.revocation.done": "You withdrew the permission of <@{user}> to operate {product}.",
   "permissions.absence": "There are no admins other than you. Add their Slack user IDs to THREADVAULT_ADMIN_IDS first.",
@@ -32,5 +35,14 @@
   "permissions.revocation": "Withdraw the permission of <@{user}>",
   "permissions.submit": "Next",
   "permissions.title": "Admin permissions",
-  "permissions.unchanged": "Nothing has changed."
+  "permissions.unchanged": "Nothing has changed.",
+  "transfer.back": "Back",
+  "transfer.close": "Cancel",
+  "transfer.confirm": "Transfer",
+  "transfer.description": "Choose the admin who becomes the owner. You stay an admin with permission to operate the app.",
+  "transfer.invalid": "Choose one of the admins other than you.",
+  "transfer.label": "New owner",
+  "transfer.question": "Transfer the ownership to <@{user}>? You stay an admin with permission to operate the app.",
+  "transfer.submit": "Next",
+  "transfer.title": "Transfer ownership"
 }

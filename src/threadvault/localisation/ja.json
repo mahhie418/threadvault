@@ -16,9 +16,12 @@
   "home.role.admin": "あなたは管理者です（操作の許可はありません）。",
   "home.role.operator": "あなたは操作を許可された管理者です。",
   "home.role.owner": "あなたはオーナーです。",
+  "home.transfer": "オーナーを譲る",
   "modal.close": "閉じる",
   "notice.grant": "<@{owner}> さんが、あなたに {product} の操作を許可しました。",
   "notice.grant.done": "<@{user}> さんに {product} の操作を許可しました。",
+  "notice.ownership": "<@{owner}> さんが、{product} のオーナーをあなたに譲りました。",
+  "notice.ownership.done": "{product} のオーナーを <@{user}> さんに譲りました。",
   "notice.revocation": "<@{owner}> さんが、あなたの {product} の操作の許可を取り消しました。",
   "notice.revocation.done": "<@{user}> さんの {product} の操作の許可を取り消しました。",
   "permissions.absence": "あなた以外の管理者がいません。先に THREADVAULT_ADMIN_IDS に管理者の Slack ユーザー ID を書いてください。",
@@ -32,5 +35,14 @@
   "permissions.revocation": "<@{user}> さんの操作の許可を取り消す",
   "permissions.submit": "次へ",
   "permissions.title": "管理者の権限",
-  "permissions.unchanged": "変更がありません。"
+  "permissions.unchanged": "変更がありません。",
+  "transfer.back": "戻る",
+  "transfer.close": "キャンセル",
+  "transfer.confirm": "譲る",
+  "transfer.description": "オーナーにする管理者を選んでください。あなたは、操作を許可された管理者として残ります。",
+  "transfer.invalid": "あなた以外の管理者から選んでください。",
+  "transfer.label": "新しいオーナー",
+  "transfer.question": "<@{user}> さんにオーナーを譲りますか？ あなたは、操作を許可された管理者として残ります。",
+  "transfer.submit": "次へ",
+  "transfer.title": "オーナーの譲渡"
 }

@@ -13,7 +13,8 @@ SETTINGS_VALID = [
     {'schedule_time': '23:59'},
     {'attachment_size_maximum': 1},
     {'attachment_size_maximum': threadvault.customisation.ATTACHMENT_SIZE_MAXIMUM},
-    {'admins_allowed': ('UXXX1', 'WXXX2')}
+    {'owner_id': 'UXXX1'},
+    {'admins_allowed': ('UXXX1', 'WXXX2')},
 ]
 
 SETTINGS_INVALID = [
@@ -26,6 +27,7 @@ SETTINGS_INVALID = [
     ({'attachment_size_maximum': 0}, 'attachment_size_maximum'),
     ({'attachment_size_maximum': threadvault.customisation.ATTACHMENT_SIZE_MAXIMUM + 1}, 'attachment_size_maximum'),
     ({'markdown_language': 'xxx'}, 'markdown_language'),
+    ({'owner_id': 'xxx'}, 'owner_id'),
     ({'admins_allowed': ('UXXX1', 'xxx')}, 'admins_allowed')
 ]
 
@@ -76,7 +78,8 @@ def test_customisation_settings_store(
         attachments_enabled = False,
         attachment_size_maximum = 50,
         markdown_language = 'ja',
-        admins_allowed = ('UXXX1', 'UXXX2')
+        owner_id = 'UXXX1',
+        admins_allowed = ('UXXX1', 'UXXX2'),
     )
 
     store.save('xxx1', settings, update_user = 'xxx')

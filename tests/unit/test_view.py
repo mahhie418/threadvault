@@ -23,8 +23,8 @@ ROLES_MESSAGE = [
 ]
 
 VIEWERS_MESSAGE = [
-    ({'connected': True, 'role': 'owner'}, [threadvault.slack.view.PERMISSIONS_ACTION]),
-    ({'connected': False, 'role': 'owner'}, [threadvault.slack.view.CONNECTION_ACTION, threadvault.slack.view.PERMISSIONS_ACTION]),
+    ({'connected': True, 'role': 'owner'}, [threadvault.slack.view.PERMISSIONS_ACTION, threadvault.slack.view.TRANSFER_ACTION]),
+    ({'connected': False, 'role': 'owner'}, [threadvault.slack.view.CONNECTION_ACTION, threadvault.slack.view.PERMISSIONS_ACTION, threadvault.slack.view.TRANSFER_ACTION]),
     ({'connected': False, 'role': 'operator'}, [threadvault.slack.view.CONNECTION_ACTION]),
     ({'connected': False, 'role': 'admin'}, []),
     ({'connected': False, 'role': 'member'}, [])
@@ -131,3 +131,18 @@ def test_view_permission_absence() -> None:
 
     assert 'submit' not in view
     assert [block['text']['text'] for block in view['blocks']] == ['There are no admins other than you. Add their Slack user IDs to THREADVAULT_ADMIN_IDS first.']
+
+def test_view_transfer_choice() -> None:
+
+    view = threadvault.slack.view.cede(language = 'en')
+
+    assert view['callback_id'] == threadvault.slack.view.TRANSFER_CALLBACK
+    assert [block['text']['text'] for block in view['blocks'] if block['type'] == 'section'] == ['Choose the admin who becomes the owner. You stay an admin with permission to operate the app.']
+    assert [(block['block_id'], block['element']) for block in view['blocks'] if block['type'] == 'input'] == [(threadvault.slack.view.SUCCESSOR_INPUT, {'type': 'users_select', 'action_id': threadvault.slack.view.SUCCESSOR_INPUT})]
+
+def test_view_transfer_confirmation() -> None:
+
+    view = threadvault.slack.view.nominate(successor = 'UXXX2', language = 'en')
+
+    assert (view['callback_id'], view['private_metadata'], view['close']['text']) == (threadvault.slack.view.TRANSFER_CONFIRMATION, 'UXXX2', 'Back')
+    assert [block['text']['text'] for block in view['blocks']] == ['Transfer the ownership to <@UXXX2>? You stay an admin with permission to operate the app.']
