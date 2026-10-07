@@ -1,3 +1,5 @@
+import collections.abc
+import contextlib
 import json
 import os
 import pathlib
@@ -5,6 +7,7 @@ import pathlib
 import cryptography.fernet
 import pytest
 import respx
+import slack_bolt
 import slack_sdk
 
 import threadvault.encryption
@@ -12,6 +15,7 @@ import threadvault.github.oauth
 import threadvault.github.rest
 import threadvault.product
 import threadvault.slack.api
+import threadvault.slack.application
 import threadvault.storage
 import threadvault.terminal
 
@@ -19,6 +23,12 @@ TOKENS_BACKUP = [
     ('xoxb-xxx', ['--out', 'xxx'], 0, 'xxx: 0 messages, 0 deleted, 0 withheld, 0 files, 0 failures\ngeneral: 5 messages, 0 deleted, 0 withheld, 0 files, 0 failures\n', ''),
     ('', ['--out', 'xxx'], 1, '', 'error: Missing required environment variables: SLACK_BOT_TOKEN\n'),
     ('xoxb-xxx', ['--repo', 'xxx/xxx'], 1, '', 'error: GitHub is not connected yet\n')
+]
+
+ENVIRONMENTS_SERVE = [
+    ({'SLACK_APP_TOKEN': 'xapp-xxx', 'THREADVAULT_OWNER_ID': 'UXXX1', 'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'}, contextlib.nullcontext, 0, '', ['xapp-xxx']),
+    ({'SLACK_APP_TOKEN': '', 'THREADVAULT_OWNER_ID': '', 'GITHUB_APP_CLIENT_ID': '', 'GITHUB_APP_SLUG': ''}, contextlib.nullcontext, 1, 'error: Missing required environment variables: SLACK_APP_TOKEN, THREADVAULT_OWNER_ID, GITHUB_APP_CLIENT_ID, GITHUB_APP_SLUG\n', []),
+    ({'SLACK_APP_TOKEN': 'xapp-xxx', 'THREADVAULT_OWNER_ID': 'UXXX1', 'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'}, threadvault.slack.application.lock, 1, 'error: {product} is already running with the data directory {directory}\n', [])
 ]
 
 CLIENTS_LOGIN = [
@@ -117,3 +127,61 @@ def test_terminal_command_github_login(
 
     assert capsys.readouterr() == (out, err)
     assert saved == tokens
+
+@pytest.mark.parametrize(('environment', 'holder', 'status', 'err', 'started'), ENVIRONMENTS_SERVE)
+def test_terminal_command_slack_serve(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    slack: slack_sdk.web.WebClient,
+    environment: dict[str, str],
+    holder: collections.abc.Callable[[pathlib.Path], contextlib.AbstractContextManager[object]],
+    status: int,
+    err: str,
+    started: list[str]
+) -> None:
+
+    tokens = []
+
+    def connect(
+        _: str
+    ) -> slack_sdk.web.WebClient:
+
+        return slack
+
+    def start(
+        _: slack_bolt.App,
+        token: str
+    ) -> None:
+
+        tokens.append(token)
+
+        raise KeyboardInterrupt
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('SLACK_BOT_TOKEN', 'xoxb-xxx')
+    monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
+    monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+    monkeypatch.setattr(threadvault.slack.application, 'start', start)
+
+    for name, value in environment.items(): monkeypatch.setenv(name, value)
+
+    with holder(tmp_path): assert threadvault.terminal.main(['slack-serve']) == status
+    assert capsys.readouterr() == ('', err.format(product = threadvault.product.NAME, directory = tmp_path))
+    assert tokens == started
+
+def test_terminal_command_print_manifest(
+    capsys: pytest.CaptureFixture[str]
+) -> None:
+
+    assert threadvault.terminal.main(['print-manifest']) == 0
+
+    manifest = json.loads(capsys.readouterr().out)
+
+    assert manifest['oauth_config']['scopes']['bot'] == ['channels:history', 'channels:read', 'chat:write', 'files:read', 'groups:history', 'groups:read', 'reactions:read', 'users:read']
+    assert manifest['features']['app_home']['home_tab_enabled']
+    assert manifest['features']['app_home']['messages_tab_enabled']
+    assert manifest['features']['app_home']['messages_tab_read_only_enabled']
+    assert manifest['settings']['event_subscriptions']['bot_events'] == ['app_home_opened']
+    assert manifest['settings']['interactivity']['is_enabled']
+    assert manifest['settings']['socket_mode_enabled']

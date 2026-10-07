@@ -1,11 +1,14 @@
 """Command-line entry point."""
 
 import argparse
+import contextlib
 import datetime
+import importlib.resources
 import os
 import pathlib
 import sys
 
+import slack_bolt.error
 import slack_sdk.errors
 
 import threadvault.backup.runner
@@ -17,6 +20,7 @@ import threadvault.github.rest
 import threadvault.github.token
 import threadvault.product
 import threadvault.slack.api
+import threadvault.slack.application
 import threadvault.storage
 import threadvault.vault.repository
 import threadvault.vault.state
@@ -59,6 +63,10 @@ def _build() -> argparse.ArgumentParser:
     destination.add_argument('--repo', help = 'GitHub repository of the vault, created as private when missing', metavar = 'OWNER/NAME')
     login = commands.add_parser('github-login', help = 'connect GitHub with the device flow of the GitHub App')
     login.set_defaults(handler = _github_login)
+    server = commands.add_parser('slack-serve', help = 'run the Slack app until it is stopped')
+    server.set_defaults(handler = _slack_serve)
+    manifest = commands.add_parser('print-manifest', help = 'print the manifest for creating the Slack app')
+    manifest.set_defaults(handler = _print_manifest)
 
     return parser
 
@@ -138,5 +146,32 @@ def _github_login(
         return 1
 
     print(f'Connected to GitHub as {login}')
+
+    return 0
+
+def _slack_serve(
+    _: argparse.Namespace
+) -> int:
+
+    try:
+
+        settings = threadvault.configuration.load()
+        settings.require('slack_bot_token', 'slack_app_token', 'threadvault_owner_id', 'github_app_client_id', 'github_app_slug')
+
+        with contextlib.suppress(KeyboardInterrupt): threadvault.slack.application.serve(settings)
+
+    except (threadvault.configuration.ConfigurationError, threadvault.slack.application.LockError, threadvault.encryption.SecretKeyError, threadvault.storage.DatabaseError, slack_bolt.error.BoltError) as error:
+
+        print(f'error: {error}', file = sys.stderr)
+
+        return 1
+
+    return 0
+
+def _print_manifest(
+    _: argparse.Namespace
+) -> int:
+
+    print(importlib.resources.files('threadvault.slack').joinpath('manifest.json').read_text(encoding = 'utf-8'), end = '')
 
     return 0

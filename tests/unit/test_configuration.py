@@ -14,6 +14,7 @@ ENVIRONMENT_VALID = {
     'SLACK_APP_TOKEN': 'xapp-xxx',
     'GITHUB_APP_CLIENT_ID': 'xxx',
     'GITHUB_APP_SLUG': 'xxx',
+    'THREADVAULT_OWNER_ID': ' UXXX ',
     'THREADVAULT_ADMIN_IDS': ' UXXX , WXXX ,, ',
     'THREADVAULT_SECRET_KEY': 'xxx',
     'THREADVAULT_LANGUAGE_DISPLAY': 'JA',
@@ -26,6 +27,7 @@ ENVIRONMENT_INVALID = [
     ('SLACK_APP_TOKEN', 'xoxb-xxx', 'SLACK_APP_TOKEN'),
     ('GITHUB_APP_CLIENT_ID', 'xxx xxx', 'GITHUB_APP_CLIENT_ID'),
     ('GITHUB_APP_SLUG', 'xxx_xxx', 'GITHUB_APP_SLUG'),
+    ('THREADVAULT_OWNER_ID', 'UXXX,WXXX', 'THREADVAULT_OWNER_ID'),
     ('THREADVAULT_ADMIN_IDS', 'UXXX,xxx', 'xxx'),
     ('THREADVAULT_LANGUAGE_DISPLAY', 'xxx', 'THREADVAULT_LANGUAGE_DISPLAY'),
     ('THREADVAULT_LOOKBACK_DAYS', '0', 'between 1 and 90'),
@@ -42,9 +44,7 @@ def isolated(
 
     monkeypatch.chdir(tmp_path)
 
-    for name in os.environ:
-
-        if name.startswith(PREFIXES): monkeypatch.delenv(name)
+    for name in [name for name in os.environ if name.startswith(PREFIXES)]: monkeypatch.delenv(name)
 
     return tmp_path
 
@@ -54,6 +54,7 @@ def test_configuration_values_default() -> None:
 
     assert not settings.slack_bot_token
     assert not settings.slack_app_token
+    assert not settings.threadvault_owner_id
     assert settings.threadvault_admin_ids == frozenset()
     assert settings.threadvault_secret_key is None
     assert settings.threadvault_data_directory == platformdirs.user_data_path(threadvault.product.NAME, appauthor = False)
@@ -69,6 +70,7 @@ def test_configuration_values_parse() -> None:
     assert settings.slack_app_token == ENVIRONMENT_VALID['SLACK_APP_TOKEN']
     assert settings.github_app_client_id == ENVIRONMENT_VALID['GITHUB_APP_CLIENT_ID']
     assert settings.github_app_slug == ENVIRONMENT_VALID['GITHUB_APP_SLUG']
+    assert settings.threadvault_owner_id == 'UXXX'
     assert settings.threadvault_admin_ids == frozenset({'UXXX', 'WXXX'})
     assert settings.threadvault_secret_key == ENVIRONMENT_VALID['THREADVAULT_SECRET_KEY']
     assert settings.threadvault_language_display == 'ja'
@@ -93,8 +95,7 @@ def test_configuration_values_secure() -> None:
 def test_configuration_values_present() -> None:
 
     settings = threadvault.configuration.load(ENVIRONMENT_VALID)
-
-    settings.require('slack_bot_token', 'slack_app_token', 'github_app_client_id', 'github_app_slug', 'threadvault_admin_ids')
+    settings.require('slack_bot_token', 'slack_app_token', 'github_app_client_id', 'github_app_slug', 'threadvault_owner_id', 'threadvault_admin_ids')
 
 def test_configuration_values_missing() -> None:
 
@@ -142,7 +143,6 @@ def test_configuration_dotenv_override(
     file.write_text('THREADVAULT_LOOKBACK_DAYS=0\n', encoding = 'utf-8')
 
     monkeypatch.setenv('THREADVAULT_LOOKBACK_DAYS', '90')
-
     settings = threadvault.configuration.load()
 
     assert settings.threadvault_lookback_days == 90
@@ -153,7 +153,6 @@ def test_configuration_dotenv_missing(
 ) -> None:
 
     monkeypatch.setenv('THREADVAULT_DELETIONS_MAXIMUM', '7')
-
     settings = threadvault.configuration.load()
 
     assert settings.threadvault_deletions_maximum == 7

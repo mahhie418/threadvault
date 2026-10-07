@@ -276,7 +276,7 @@ def test_runner_vault_checkpoint(
     slack: slack_sdk.web.WebClient
 ) -> None:
 
-    states: list[dict[str, str]] = []
+    states = []
 
     for _ in range(2): threadvault.backup.runner.run(slack, tmp_path, SETTINGS, days = 30, limit = None, now = NOW, checkpoint = lambda _: states.append(threadvault.vault.state.load(tmp_path)))
 

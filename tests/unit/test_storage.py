@@ -1,7 +1,6 @@
 import collections.abc
 import os
 import pathlib
-import sqlite3
 import threading
 
 import pytest
@@ -54,7 +53,7 @@ def test_storage_database_consistency(
     database: threadvault.storage.Database
 ) -> None:
 
-    connections: list[sqlite3.Connection] = []
+    connections = []
 
     def work() -> None:
 
@@ -76,6 +75,7 @@ def test_storage_database_robustness(
     databases = [threadvault.storage.Database(path) for _ in range(2)]
 
     with databases[0].begin() as connection: connection.execute(INSERT)
+
     databases[0].close()
 
     try: assert count(databases[1]) == 1

@@ -17,7 +17,7 @@ class Slack(slack_sdk.web.WebClient):
         workspace: dict[str, typing.Any]
     ) -> None:
 
-        super().__init__()
+        super().__init__(token = 'xoxb-xxx', base_url = 'http://127.0.0.1:9/')
 
         self.workspace = workspace
 
@@ -28,10 +28,13 @@ class Slack(slack_sdk.web.WebClient):
         *,
         http_verb: str = 'POST',
         params: dict[str, typing.Any] | None = None,
+        json: dict[str, typing.Any] | None = None,
         **_: object
     ) -> slack_sdk.web.SlackResponse:
 
-        arguments = {key: value for key, value in (params or {}).items() if value is not None}
+        arguments = {key: value for key, value in {**(params or {}), **(json or {})}.items() if value is not None}
+        calls: list[tuple[str, dict[str, typing.Any]]] = self.workspace['calls']
+        calls.append((api_method, arguments))
         types: str = arguments.get('types', 'public_channel')
         conversations: dict[str, list[dict[str, typing.Any]]] = self.workspace['messages']
         messages: list[dict[str, typing.Any]] = sorted(conversations.get(arguments.get('channel', ''), []), key = lambda message: decimal.Decimal(message['ts']))
@@ -44,6 +47,9 @@ class Slack(slack_sdk.web.WebClient):
             case 'conversations.members': data = page('members', self.workspace['members'][arguments['channel']], arguments)
             case 'conversations.history': data = page('messages', [message for message in reversed(messages) if message.get('thread_ts', message['ts']) == message['ts'] and within(message, arguments)], arguments)
             case 'conversations.replies': data = page('messages', [message for message in messages if message.get('thread_ts') == arguments['ts']], arguments)
+            case 'users.info': data = {'user': next((user for user in self.workspace['users'] if user['id'] == arguments['user']), {'id': arguments['user']})}
+            case 'views.open': data = {'view': {'id': 'VXXX'}}
+            case 'chat.postMessage' | 'views.publish' | 'views.update': data = {}
             case _: raise NotImplementedError(api_method)
 
         return slack_sdk.web.SlackResponse(client = self, http_verb = http_verb, api_url = api_method, req_args = {'params': arguments}, data = {'ok': True, **data}, headers = {}, status_code = 200)
@@ -54,7 +60,7 @@ def workspace() -> dict[str, typing.Any]:
     directory = pathlib.Path(os.path.join(pathlib.Path(__file__).parent, 'fixtures', 'slack'))
     users, channels, members, messages = (json.loads(pathlib.Path(os.path.join(directory, name)).read_text(encoding = 'utf-8')) for name in ('users.list.json', 'conversations.list.json', 'conversations.members.json', 'messages.json'))
 
-    return {'url': 'https://xxx.slack.com/', 'users': users, 'channels': channels, 'members': members, 'messages': {'CXXX1': messages}}
+    return {'url': 'https://xxx.slack.com/', 'users': users, 'channels': channels, 'members': members, 'messages': {'CXXX1': messages}, 'calls': []}
 
 @pytest.fixture
 def slack(

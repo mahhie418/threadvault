@@ -12,7 +12,7 @@ DIRECTORIES = {'CXXX1': 'general', 'CXXX2': 'xxx'}
 NAMES = {'UXXX1': 'xxx1', 'CXXX1': 'general'}
 URL = 'https://xxx.slack.com/'
 
-READMES_INTRODUCED: list[tuple[str, threadvault.configuration.Language, str]] = [
+READMES_INTRODUCED = [
     ('', 'en', '# Slack backup'),
     ('', 'ja', '# Slack のバックアップ'),
     ('# xxx', 'en', '# Slack backup'),
