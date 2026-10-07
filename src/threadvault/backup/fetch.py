@@ -18,12 +18,14 @@ def window(
               or None for every message.
 
     Returns:
-        The two timestamps, written as Slack writes the timestamps of messages.
+        The two timestamps, written as Slack writes the timestamps of
+        messages. A window of every message starts at 0, as Slack refuses
+        0.000000.
     """
 
-    start = datetime.datetime.fromtimestamp(0, datetime.UTC) if days is None else now - datetime.timedelta(days = days)
+    oldest = '0' if days is None else f'{(now - datetime.timedelta(days = days)).timestamp():.6f}'
 
-    return f'{start.timestamp():.6f}', f'{now.timestamp():.6f}'
+    return oldest, f'{now.timestamp():.6f}'
 
 def threads(
     history: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],

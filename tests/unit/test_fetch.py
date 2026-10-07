@@ -22,7 +22,7 @@ def test_fetch_window_lookback() -> None:
 
 def test_fetch_window_whole() -> None:
 
-    assert threadvault.backup.fetch.window(NOW, None) == ('0.000000', '1000000000.000000')
+    assert threadvault.backup.fetch.window(NOW, None) == ('0', '1000000000.000000')
 
 @pytest.mark.parametrize(('history', 'stored', 'expected'), THREADS_CHANGED)
 def test_fetch_message_change(
