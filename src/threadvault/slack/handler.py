@@ -42,7 +42,8 @@ def register(
     permissions of the admins and transfers the ownership to an admin, as
     `threadvault.slack.permission.restrict` makes sure. When the permissions
     or the ownership change, both the admin and the owner hear of it by
-    direct message.
+    direct message, and the owner and every admin hear by direct message
+    when GitHub is connected or disconnected.
 
     Args:
         application: The application.
@@ -112,6 +113,15 @@ def register(
         try: application.client.chat_postMessage(channel = recipient, text = threadvault.localisation.translate(key, choose(recipient), **values))
         except slack_sdk.errors.SlackApiError as error: _LOGGER.warning('Direct message to %s not sent: %s', recipient, error)
 
+    def notify(
+        team: str,
+        key: str,
+        user: str,
+        **values: str
+    ) -> None:
+
+        for recipient in sorted(threadvault.slack.permission.admins(settings, store.load(team))): tell(recipient, key, user = user, **values)
+
     def link(
         team: str,
         user: str,
@@ -133,6 +143,7 @@ def register(
 
         refresh(team, user)
         show(modal, threadvault.slack.view.respond(error = None, language = language))
+        notify(team, 'notice.connection', user)
 
     def publish(
         event: dict[str, typing.Any],
@@ -171,6 +182,7 @@ def register(
 
         manager.delete()
         refresh(context.team_id, context.user_id)
+        notify(context.team_id, 'notice.disconnection', context.user_id)
 
     def manage(
         ack: slack_bolt.Ack,

@@ -27,6 +27,8 @@
   "home.role.owner": "You are the owner.",
   "home.transfer": "Transfer ownership",
   "modal.close": "Close",
+  "notice.connection": "<@{user}> connected GitHub.",
+  "notice.disconnection": "<@{user}> disconnected GitHub.",
   "notice.grant": "<@{owner}> allowed you to operate {product}.",
   "notice.grant.done": "You allowed <@{user}> to operate {product}.",
   "notice.ownership": "<@{owner}> transferred the ownership of {product} to you.",

@@ -27,6 +27,8 @@
   "home.role.owner": "あなたはオーナーです。",
   "home.transfer": "オーナーを譲る",
   "modal.close": "閉じる",
+  "notice.connection": "<@{user}> さんが GitHub と連携しました。",
+  "notice.disconnection": "<@{user}> さんが GitHub との連携を解除しました。",
   "notice.grant": "<@{owner}> さんが、あなたに {product} の操作を許可しました。",
   "notice.grant.done": "<@{user}> さんに {product} の操作を許可しました。",
   "notice.ownership": "<@{owner}> さんが、{product} のオーナーをあなたに譲りました。",

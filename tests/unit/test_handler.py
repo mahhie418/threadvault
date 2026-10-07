@@ -197,6 +197,8 @@ def test_handler_github_connection(
     manager: threadvault.github.token.TokenManager
 ) -> None:
 
+    next(entry for entry in workspace['users'] if entry['id'] == 'UXXX2')['locale'] = 'en-GB'
+
     with respx.mock:
 
         respx.post(threadvault.github.oauth.CODE_URL).respond(200, json = CODE_ISSUED)
@@ -209,6 +211,7 @@ def test_handler_github_connection(
     assert calls(workspace, 'views.open') == [{'trigger_id': 'xxx', 'view': threadvault.slack.view.connect(code = None, language = 'ja')}]
     assert calls(workspace, 'views.update') == [{'view_id': 'VXXX', 'view': threadvault.slack.view.connect(code = CODE, language = 'ja')}, {'view_id': 'VXXX', 'view': threadvault.slack.view.respond(error = None, language = 'ja')}]
     assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'connected', destination = None, role = 'owner', slug = 'xxx', language = 'ja')}]
+    assert calls(workspace, 'chat.postMessage') == [{'channel': 'UXXX1', 'text': threadvault.localisation.translate('notice.connection', 'ja', user = 'UXXX1')}, {'channel': 'UXXX2', 'text': threadvault.localisation.translate('notice.connection', 'en', user = 'UXXX1')}]
 
 def test_handler_github_disconnection(
     application: slack_bolt.App,
@@ -221,6 +224,7 @@ def test_handler_github_disconnection(
     assert press(application, 'UXXX1', threadvault.slack.view.DISCONNECTION_ACTION).status == 200
     assert not manager.connected()
     assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'disconnected', destination = None, role = 'owner', slug = 'xxx', language = 'ja')}]
+    assert calls(workspace, 'chat.postMessage') == [{'channel': admin, 'text': threadvault.localisation.translate('notice.disconnection', 'ja', user = 'UXXX1')} for admin in ('UXXX1', 'UXXX2')]
 
 @pytest.mark.parametrize(('response', 'github'), INSTALLATIONS_LISTED)
 def test_handler_github_installation(
@@ -261,6 +265,7 @@ def test_handler_github_failure(
     assert not manager.connected()
     assert calls(workspace, 'views.update')[-1] == {'view_id': 'VXXX', 'view': threadvault.slack.view.respond(error = threadvault.github.oauth.OAuthError(reason, 'xxx'), language = 'ja')}
     assert calls(workspace, 'views.publish') == []
+    assert calls(workspace, 'chat.postMessage') == []
 
 def test_handler_github_closure(
     monkeypatch: pytest.MonkeyPatch,
@@ -327,6 +332,44 @@ def test_handler_github_permission(
         assert press(application, user, threadvault.slack.view.CONNECTION_ACTION).status == 200
 
     assert len(calls(workspace, 'views.open')) == count
+
+def test_handler_notice_owner(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database,
+    manager: threadvault.github.token.TokenManager
+) -> None:
+
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(owner_id = 'UXXX3'), update_user = 'UXXX1')
+    manager.save(TOKENS_SAVED)
+
+    assert press(application, 'UXXX3', threadvault.slack.view.DISCONNECTION_ACTION).status == 200
+    assert [arguments['channel'] for arguments in calls(workspace, 'chat.postMessage')] == ['UXXX1', 'UXXX2', 'UXXX3']
+
+def test_handler_notice_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    application: slack_bolt.App,
+    slack: slack_sdk.web.WebClient,
+    manager: threadvault.github.token.TokenManager
+) -> None:
+
+    channels = []
+
+    def post(
+        *,
+        channel: str,
+        **_: object
+    ) -> None:
+
+        if channel == 'UXXX1': raise slack_sdk.errors.SlackApiError('xxx', {'ok': False, 'error': 'channel_not_found'})
+
+        channels.append(channel)
+
+    monkeypatch.setattr(slack, 'chat_postMessage', post)
+    manager.save(TOKENS_SAVED)
+
+    assert press(application, 'UXXX1', threadvault.slack.view.DISCONNECTION_ACTION).status == 200
+    assert channels == ['UXXX2']
 
 def test_handler_permission_grant(
     application: slack_bolt.App,
