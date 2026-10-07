@@ -45,6 +45,16 @@ def test_rest_user_failure(
 
     assert exception.value.status == status
 
+def test_rest_installation_list() -> None:
+
+    with respx.mock:
+
+        route = respx.get(f'{threadvault.github.rest.API_URL}/user/installations').respond(200, json = {'total_count': 1, 'installations': [{'id': 1}]})
+        installations = threadvault.github.rest.installations('ghu_xxx')
+
+    assert installations == [{'id': 1}]
+    assert route.calls.last.request.url.params['per_page'] == '100'
+
 @pytest.mark.parametrize(('full_name', 'path'), REPOSITORIES_CREATED)
 def test_rest_repository_creation(
     full_name: str,

@@ -10,9 +10,10 @@ import threadvault.slack.view
 CODE = threadvault.github.oauth.Code(device_code = 'xxx', user_code = 'XXXX-XXXX', verification_uri = 'https://github.com/login/device', interval = 5)
 
 STATES_HOME = [
-    ({'connected': True, 'destination': 'xxx/xxx', 'role': 'owner', 'language': 'ja'}, ['*GitHub*\n連携済み', '*保存先*\n<https://github.com/xxx/xxx|xxx/xxx>']),
-    ({'connected': True, 'destination': 'xxx/xxx', 'role': 'member', 'language': 'en'}, ['*GitHub*\nConnected']),
-    ({'connected': False, 'destination': None, 'role': 'admin', 'language': 'en'}, ['*GitHub*\nNot connected', '*Destination*\nNot chosen'])
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'role': 'owner', 'language': 'ja'}, ['*GitHub*\n連携済み', '*保存先*\n<https://github.com/xxx/xxx|xxx/xxx>']),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'role': 'member', 'language': 'en'}, ['*GitHub*\nConnected']),
+    ({'github': 'disconnected', 'destination': None, 'role': 'admin', 'language': 'en'}, ['*GitHub*\nNot connected', '*Destination*\nNot chosen']),
+    ({'github': 'uninstalled', 'destination': None, 'role': 'admin', 'language': 'en'}, ['*GitHub*\nConnected', '*Destination*\nNot chosen'])
 ]
 
 ROLES_MESSAGE = [
@@ -23,12 +24,22 @@ ROLES_MESSAGE = [
 ]
 
 VIEWERS_MESSAGE = [
-    ({'connected': True, 'role': 'owner'}, [(threadvault.slack.view.DISCONNECTION_ACTION, True), (threadvault.slack.view.PERMISSIONS_ACTION, False), (threadvault.slack.view.TRANSFER_ACTION, False)]),
-    ({'connected': True, 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, True)]),
-    ({'connected': True, 'role': 'admin'}, []),
-    ({'connected': False, 'role': 'owner'}, [(threadvault.slack.view.CONNECTION_ACTION, False), (threadvault.slack.view.PERMISSIONS_ACTION, False), (threadvault.slack.view.TRANSFER_ACTION, False)]),
-    ({'connected': False, 'role': 'operator'}, [(threadvault.slack.view.CONNECTION_ACTION, False)]),
-    ({'connected': False, 'role': 'member'}, [])
+    ({'github': 'connected', 'role': 'owner'}, [(threadvault.slack.view.DISCONNECTION_ACTION, True), (threadvault.slack.view.PERMISSIONS_ACTION, False), (threadvault.slack.view.TRANSFER_ACTION, False)]),
+    ({'github': 'connected', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, True)]),
+    ({'github': 'connected', 'role': 'admin'}, []),
+    ({'github': 'disconnected', 'role': 'owner'}, [(threadvault.slack.view.CONNECTION_ACTION, False), (threadvault.slack.view.PERMISSIONS_ACTION, False), (threadvault.slack.view.TRANSFER_ACTION, False)]),
+    ({'github': 'disconnected', 'role': 'operator'}, [(threadvault.slack.view.CONNECTION_ACTION, False)]),
+    ({'github': 'disconnected', 'role': 'member'}, []),
+    ({'github': 'uninstalled', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, True)])
+]
+
+VIEWERS_INSTALLATION = [
+    ({'github': 'connected', 'role': 'owner'}, []),
+    ({'github': 'disconnected', 'role': 'owner'}, []),
+    ({'github': 'uninstalled', 'role': 'owner'}, ['*GitHub App*\nNot installed yet. <https://github.com/apps/xxx1/installations/new|Install it> on the account or organisation that will hold the vault.']),
+    ({'github': 'uninstalled', 'role': 'operator'}, ['*GitHub App*\nNot installed yet. <https://github.com/apps/xxx1/installations/new|Install it> on the account or organisation that will hold the vault.']),
+    ({'github': 'uninstalled', 'role': 'admin'}, []),
+    ({'github': 'uninstalled', 'role': 'member'}, [])
 ]
 
 ADMINS_ALLOWED = [
@@ -55,7 +66,7 @@ def test_view_home_status(
     texts: list[str]
 ) -> None:
 
-    view = threadvault.slack.view.home(**state)
+    view = threadvault.slack.view.home(**state, slug = 'xxx')
 
     assert view['type'] == 'home'
     assert [field['text'] for block in view['blocks'] if 'fields' in block for field in block['fields']] == texts
@@ -66,7 +77,7 @@ def test_view_home_role(
     texts: list[str]
 ) -> None:
 
-    view = threadvault.slack.view.home(connected = False, destination = None, role = role, language = 'en')
+    view = threadvault.slack.view.home(github = 'disconnected', destination = None, role = role, slug = 'xxx', language = 'en')
 
     assert [element['text'] for block in view['blocks'] if block['type'] == 'context' for element in block['elements']] == texts
 
@@ -76,9 +87,19 @@ def test_view_home_connection(
     buttons: list[tuple[str, bool]]
 ) -> None:
 
-    view = threadvault.slack.view.home(**state, destination = None, language = 'en')
+    view = threadvault.slack.view.home(**state, destination = None, slug = 'xxx', language = 'en')
 
     assert [(element['action_id'], 'confirm' in element) for block in view['blocks'] if block['type'] == 'actions' for element in block['elements']] == buttons
+
+@pytest.mark.parametrize(('state', 'texts'), VIEWERS_INSTALLATION)
+def test_view_home_installation(
+    state: dict[str, typing.Any],
+    texts: list[str]
+) -> None:
+
+    view = threadvault.slack.view.home(**state, destination = None, slug = 'xxx1', language = 'en')
+
+    assert [block['text']['text'] for block in view['blocks'] if 'text' in block] == texts
 
 @pytest.mark.parametrize(('code', 'text'), CONNECTIONS_MESSAGE)
 def test_view_connection_establishment(

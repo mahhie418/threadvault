@@ -8,6 +8,8 @@ import threadvault.github.oauth
 import threadvault.localisation
 import threadvault.slack.permission
 
+type GitHubState = typing.Literal['connected', 'disconnected', 'uninstalled']
+
 CONNECTION_ACTION = 'connection_action'
 DISCONNECTION_ACTION = 'disconnection_action'
 PERMISSIONS_ACTION = 'permissions_action'
@@ -24,9 +26,10 @@ _CHECKBOX_LIMIT = 10
 
 def home(
     *,
-    connected: bool,
+    github: GitHubState,
     destination: str | None,
     role: threadvault.slack.permission.Role,
+    slug: str,
     language: threadvault.configuration.Language
 ) -> dict[str, typing.Any]:
 
@@ -34,21 +37,25 @@ def home(
 
     The owner and the admins also see the destination and their own role.
     The owner and the admins allowed to operate the app see a button that
-    connects GitHub, or that disconnects it once it is connected, and the
-    owner also sees buttons that choose the admins allowed to operate the
-    app and that transfer the ownership to an admin.
+    connects GitHub, or that disconnects it once it is connected, and a link
+    to install the GitHub App while it has no installation. The owner also
+    sees buttons that choose the admins allowed to operate the app and that
+    transfer the ownership to an admin.
 
     Args:
-        connected: Whether GitHub is connected.
+        github: State of the connection to GitHub: disconnected, uninstalled
+                when the GitHub App has no installation that the connected
+                account can access, or connected.
         destination: Repository of the vault, as owner/name, or None while none is chosen.
         role: Role of the viewer.
+        slug: URL slug of the GitHub App.
         language: Language of the viewer.
 
     Returns:
         The view, as views.publish takes it.
     """
 
-    fields = [(threadvault.localisation.translate('home.github', language), threadvault.localisation.translate('home.github.connected' if connected else 'home.github.disconnected', language))]
+    fields = [(threadvault.localisation.translate('home.github', language), threadvault.localisation.translate('home.github.disconnected' if github == 'disconnected' else 'home.github.connected', language))]
     blocks = []
 
     if role != 'member':
@@ -56,9 +63,10 @@ def home(
         fields.append((threadvault.localisation.translate('home.destination', language), f'<https://github.com/{destination}|{destination}>' if destination else threadvault.localisation.translate('home.destination.missing', language)))
         blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate(f'home.role.{role}', language)}]})
 
-    blocks.append({'type': 'section', 'fields': [{'type': 'mrkdwn', 'text': f'*{title}*\n{text}'} for title, text in fields]})
+    blocks.append({'type': 'section', 'fields': [_text(title, text) for title, text in fields]})
 
-    if role in ('owner', 'operator'): blocks.append({'type': 'actions', 'elements': [_button(connected = connected, language = language)]})
+    if role in ('owner', 'operator'): blocks.append({'type': 'actions', 'elements': [_button(connected = github != 'disconnected', language = language)]})
+    if role in ('owner', 'operator') and github == 'uninstalled': blocks.append({'type': 'section', 'text': _text(threadvault.localisation.translate('home.installation', language), threadvault.localisation.translate('home.installation.missing', language, url = f'https://github.com/apps/{slug}/installations/new'))})
     if role == 'owner': blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': action, 'text': _plain(threadvault.localisation.translate(key, language))} for action, key in ((PERMISSIONS_ACTION, 'home.permissions'), (TRANSFER_ACTION, 'home.transfer'))]})
 
     return {'type': 'home', 'blocks': blocks}
@@ -225,6 +233,13 @@ def _choice(
 ) -> dict[str, typing.Any]:
 
     return {'text': {'type': 'mrkdwn', 'text': f'<@{user}>'}, 'value': user}
+
+def _text(
+    title: str,
+    text: str
+) -> dict[str, str]:
+
+    return {'type': 'mrkdwn', 'text': f'*{title}*\n{text}'}
 
 def _plain(
     text: str

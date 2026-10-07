@@ -156,7 +156,7 @@ def _slack_serve(
     try:
 
         settings = threadvault.configuration.load()
-        settings.require('slack_bot_token', 'slack_app_token', 'threadvault_owner_id', 'github_app_client_id')
+        settings.require('slack_bot_token', 'slack_app_token', 'threadvault_owner_id', 'github_app_client_id', 'github_app_slug')
 
         with contextlib.suppress(KeyboardInterrupt): threadvault.slack.application.serve(settings)
 

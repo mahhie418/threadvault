@@ -17,6 +17,8 @@
   "home.github.connection": "GitHub と連携する",
   "home.github.disconnected": "未連携",
   "home.github.disconnection": "GitHub との連携を解除する",
+  "home.installation": "GitHub App",
+  "home.installation.missing": "まだインストールされていません。バックアップを置くアカウントか Organization に<{url}|インストール>してください。",
   "home.permissions": "管理者の権限",
   "home.role.admin": "あなたは管理者です（操作の許可はありません）。",
   "home.role.operator": "あなたは操作を許可された管理者です。",

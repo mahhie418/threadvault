@@ -2,6 +2,7 @@
 
 import collections.abc
 import dataclasses
+import datetime
 import json
 import logging
 import threading
@@ -13,6 +14,7 @@ import slack_sdk.errors
 import threadvault.configuration
 import threadvault.customisation
 import threadvault.github.oauth
+import threadvault.github.rest
 import threadvault.github.token
 import threadvault.localisation
 import threadvault.product
@@ -59,6 +61,22 @@ def register(
 
         return threadvault.localisation.choose(entry.get('locale'), settings.threadvault_language_display)
 
+    def inspect() -> threadvault.slack.view.GitHubState:
+
+        if not manager.connected(): return 'disconnected'
+
+        try:
+
+            installations = threadvault.github.rest.installations(manager.acquire(datetime.datetime.now(datetime.UTC)))
+
+        except (threadvault.github.token.TokenError, threadvault.github.rest.GitHubError) as error:
+
+            _LOGGER.warning('GitHub App installations were not checked: %s', error)
+
+            return 'connected'
+
+        return 'connected' if installations else 'uninstalled'
+
     def refresh(
         team: str,
         user: str
@@ -66,7 +84,7 @@ def register(
 
         workspace = store.load(team)
 
-        application.client.views_publish(user_id = user, view = threadvault.slack.view.home(connected = manager.connected(), destination = workspace.repository_name, role = threadvault.slack.permission.role(settings, workspace, user), language = choose(user)))
+        application.client.views_publish(user_id = user, view = threadvault.slack.view.home(github = inspect(), destination = workspace.repository_name, role = threadvault.slack.permission.role(settings, workspace, user), slug = settings.github_app_slug, language = choose(user)))
 
     def show(
         modal: str,

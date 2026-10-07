@@ -53,6 +53,25 @@ def user(
 
     return _request('GET', '/user', token).json()
 
+def installations(
+    token: str
+) -> list[dict[str, typing.Any]]:
+
+    """Fetches the installations of the GitHub App that the user can access.
+
+    Args:
+        token: Access token of the user.
+
+    Returns:
+        The installations, as GET /user/installations lists them, up to 100,
+        more than one GitHub App of a deployment is ever installed on.
+
+    Raises:
+        GitHubError: GitHub refused the request, or could not be reached.
+    """
+
+    return _request('GET', '/user/installations?per_page=100', token).json()['installations']
+
 def repository(
     token: str,
     full_name: str
