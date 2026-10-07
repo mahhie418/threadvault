@@ -30,6 +30,7 @@ NOW = datetime.datetime.now(datetime.UTC)
 
 CODE = threadvault.github.oauth.Code(device_code = 'xxx', user_code = 'XXXX-XXXX', verification_uri = 'https://github.com/login/device', interval = 0)
 TOKENS_SAVED = threadvault.github.oauth.Tokens(access_token = 'ghu_xxx', access_expiry = NOW + datetime.timedelta(hours = 8), refresh_token = 'ghr_xxx', refresh_expiry = NOW + datetime.timedelta(days = 184))
+TOKENS_EXPIRED = threadvault.github.oauth.Tokens(access_token = 'ghu_xxx', access_expiry = NOW - datetime.timedelta(days = 184), refresh_token = 'ghr_xxx', refresh_expiry = NOW - datetime.timedelta(seconds = 1))
 
 CODE_ISSUED = {'device_code': 'xxx', 'expires_in': 900, 'interval': 0, 'user_code': 'XXXX-XXXX', 'verification_uri': 'https://github.com/login/device'}
 TOKENS_ISSUED = {'access_token': 'ghu_xxx', 'expires_in': 28800, 'refresh_token': 'ghr_xxx', 'refresh_token_expires_in': 15897600}
@@ -48,6 +49,11 @@ CONNECTIONS_FAILED = [
     ({'error': 'device_flow_disabled', 'error_description': 'xxx'}, TOKENS_ISSUED, 'device_flow_disabled'),
     (CODE_ISSUED, {'error': 'access_denied', 'error_description': 'xxx'}, 'access_denied'),
     (CODE_ISSUED, {'error': 'expired_token', 'error_description': 'xxx'}, 'expired_token')
+]
+
+CONNECTIONS_EXPIRED = [
+    (TOKENS_EXPIRED, httpx.Response(200, json = INSTALLATIONS_RESPONDED)),
+    (TOKENS_SAVED, httpx.Response(401, json = {'message': 'Bad credentials'}))
 ]
 
 INSTALLATIONS_LISTED = [
@@ -282,6 +288,25 @@ def test_handler_github_closure(
 
     assert manager.connected()
     assert len(calls(workspace, 'views.publish')) == 1
+
+@pytest.mark.parametrize(('tokens', 'response'), CONNECTIONS_EXPIRED)
+def test_handler_github_expiry(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    manager: threadvault.github.token.TokenManager,
+    tokens: threadvault.github.oauth.Tokens,
+    response: httpx.Response
+) -> None:
+
+    manager.save(tokens)
+
+    with respx.mock(assert_all_called = False) as router:
+
+        router.get(f'{threadvault.github.rest.API_URL}/user/installations').mock(return_value = response)
+
+        assert home(application, 'UXXX1', 'home').status == 200
+
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'expired', destination = None, role = 'owner', slug = 'xxx', language = 'ja')}]
 
 @pytest.mark.parametrize(('user', 'allowed', 'count'), CONNECTIONS_PERMITTED)
 def test_handler_github_permission(

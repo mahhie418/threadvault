@@ -17,6 +17,8 @@
   "home.github.connection": "Connect GitHub",
   "home.github.disconnected": "Not connected",
   "home.github.disconnection": "Disconnect GitHub",
+  "home.github.expired": "Needs reconnecting",
+  "home.github.reconnection": "Reconnect GitHub",
   "home.installation": "GitHub App",
   "home.installation.missing": "Not installed yet. <{url}|Install it> on the account or organisation that will hold the vault.",
   "home.permissions": "Admin permissions",

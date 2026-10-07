@@ -13,6 +13,7 @@ STATES_HOME = [
     ({'github': 'connected', 'destination': 'xxx/xxx', 'role': 'owner', 'language': 'ja'}, ['*GitHub*\n連携済み', '*保存先*\n<https://github.com/xxx/xxx|xxx/xxx>']),
     ({'github': 'connected', 'destination': 'xxx/xxx', 'role': 'member', 'language': 'en'}, ['*GitHub*\nConnected']),
     ({'github': 'disconnected', 'destination': None, 'role': 'admin', 'language': 'en'}, ['*GitHub*\nNot connected', '*Destination*\nNot chosen']),
+    ({'github': 'expired', 'destination': None, 'role': 'admin', 'language': 'en'}, ['*GitHub*\nNeeds reconnecting', '*Destination*\nNot chosen']),
     ({'github': 'uninstalled', 'destination': None, 'role': 'admin', 'language': 'en'}, ['*GitHub*\nConnected', '*Destination*\nNot chosen'])
 ]
 
@@ -24,18 +25,21 @@ ROLES_MESSAGE = [
 ]
 
 VIEWERS_MESSAGE = [
-    ({'github': 'connected', 'role': 'owner'}, [(threadvault.slack.view.DISCONNECTION_ACTION, True), (threadvault.slack.view.PERMISSIONS_ACTION, False), (threadvault.slack.view.TRANSFER_ACTION, False)]),
-    ({'github': 'connected', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, True)]),
+    ({'github': 'connected', 'role': 'owner'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.PERMISSIONS_ACTION, 'Admin permissions', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', False)]),
+    ({'github': 'connected', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True)]),
     ({'github': 'connected', 'role': 'admin'}, []),
-    ({'github': 'disconnected', 'role': 'owner'}, [(threadvault.slack.view.CONNECTION_ACTION, False), (threadvault.slack.view.PERMISSIONS_ACTION, False), (threadvault.slack.view.TRANSFER_ACTION, False)]),
-    ({'github': 'disconnected', 'role': 'operator'}, [(threadvault.slack.view.CONNECTION_ACTION, False)]),
+    ({'github': 'disconnected', 'role': 'owner'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Admin permissions', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', False)]),
+    ({'github': 'disconnected', 'role': 'operator'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', False)]),
     ({'github': 'disconnected', 'role': 'member'}, []),
-    ({'github': 'uninstalled', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, True)])
+    ({'github': 'expired', 'role': 'operator'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Reconnect GitHub', False)]),
+    ({'github': 'expired', 'role': 'admin'}, []),
+    ({'github': 'uninstalled', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True)])
 ]
 
 VIEWERS_INSTALLATION = [
     ({'github': 'connected', 'role': 'owner'}, []),
     ({'github': 'disconnected', 'role': 'owner'}, []),
+    ({'github': 'expired', 'role': 'owner'}, []),
     ({'github': 'uninstalled', 'role': 'owner'}, ['*GitHub App*\nNot installed yet. <https://github.com/apps/xxx1/installations/new|Install it> on the account or organisation that will hold the vault.']),
     ({'github': 'uninstalled', 'role': 'operator'}, ['*GitHub App*\nNot installed yet. <https://github.com/apps/xxx1/installations/new|Install it> on the account or organisation that will hold the vault.']),
     ({'github': 'uninstalled', 'role': 'admin'}, []),
@@ -84,12 +88,12 @@ def test_view_home_role(
 @pytest.mark.parametrize(('state', 'buttons'), VIEWERS_MESSAGE)
 def test_view_home_connection(
     state: dict[str, typing.Any],
-    buttons: list[tuple[str, bool]]
+    buttons: list[tuple[str, str, bool]]
 ) -> None:
 
     view = threadvault.slack.view.home(**state, destination = None, slug = 'xxx', language = 'en')
 
-    assert [(element['action_id'], 'confirm' in element) for block in view['blocks'] if block['type'] == 'actions' for element in block['elements']] == buttons
+    assert [(element['action_id'], element['text']['text'], 'confirm' in element) for block in view['blocks'] if block['type'] == 'actions' for element in block['elements']] == buttons
 
 @pytest.mark.parametrize(('state', 'texts'), VIEWERS_INSTALLATION)
 def test_view_home_installation(

@@ -8,7 +8,7 @@ import threadvault.github.oauth
 import threadvault.localisation
 import threadvault.slack.permission
 
-type GitHubState = typing.Literal['connected', 'disconnected', 'uninstalled']
+type GitHubState = typing.Literal['connected', 'disconnected', 'expired', 'uninstalled']
 
 CONNECTION_ACTION = 'connection_action'
 DISCONNECTION_ACTION = 'disconnection_action'
@@ -37,15 +37,17 @@ def home(
 
     The owner and the admins also see the destination and their own role.
     The owner and the admins allowed to operate the app see a button that
-    connects GitHub, or that disconnects it once it is connected, and a link
-    to install the GitHub App while it has no installation. The owner also
-    sees buttons that choose the admins allowed to operate the app and that
-    transfer the ownership to an admin.
+    connects GitHub, connects it again once the connection has stopped
+    working, or disconnects it, and a link to install the GitHub App while
+    it has no installation. The owner also sees buttons that choose the
+    admins allowed to operate the app and that transfer the ownership to an
+    admin.
 
     Args:
-        github: State of the connection to GitHub: disconnected, uninstalled
-                when the GitHub App has no installation that the connected
-                account can access, or connected.
+        github: State of the connection to GitHub: disconnected, expired when
+                the tokens no longer work, uninstalled when the GitHub App has
+                no installation that the connected account can access, or
+                connected.
         destination: Repository of the vault, as owner/name, or None while none is chosen.
         role: Role of the viewer.
         slug: URL slug of the GitHub App.
@@ -55,7 +57,13 @@ def home(
         The view, as views.publish takes it.
     """
 
-    fields = [(threadvault.localisation.translate('home.github', language), threadvault.localisation.translate('home.github.disconnected' if github == 'disconnected' else 'home.github.connected', language))]
+    match github:
+
+        case 'disconnected': connection = threadvault.localisation.translate('home.github.disconnected', language)
+        case 'expired': connection = threadvault.localisation.translate('home.github.expired', language)
+        case _: connection = threadvault.localisation.translate('home.github.connected', language)
+
+    fields = [(threadvault.localisation.translate('home.github', language), connection)]
     blocks = []
 
     if role != 'member':
@@ -65,7 +73,7 @@ def home(
 
     blocks.append({'type': 'section', 'fields': [_text(title, text) for title, text in fields]})
 
-    if role in ('owner', 'operator'): blocks.append({'type': 'actions', 'elements': [_button(connected = github != 'disconnected', language = language)]})
+    if role in ('owner', 'operator'): blocks.append({'type': 'actions', 'elements': [_button(github = github, language = language)]})
     if role in ('owner', 'operator') and github == 'uninstalled': blocks.append({'type': 'section', 'text': _text(threadvault.localisation.translate('home.installation', language), threadvault.localisation.translate('home.installation.missing', language, url = f'https://github.com/apps/{slug}/installations/new'))})
     if role == 'owner': blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': action, 'text': _plain(threadvault.localisation.translate(key, language))} for action, key in ((PERMISSIONS_ACTION, 'home.permissions'), (TRANSFER_ACTION, 'home.transfer'))]})
 
@@ -218,11 +226,12 @@ def nominate(
 
 def _button(
     *,
-    connected: bool,
+    github: GitHubState,
     language: threadvault.configuration.Language
 ) -> dict[str, typing.Any]:
 
-    if not connected: return {'type': 'button', 'action_id': CONNECTION_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.github.connection', language))}
+    if github == 'disconnected': return {'type': 'button', 'action_id': CONNECTION_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.github.connection', language))}
+    if github == 'expired': return {'type': 'button', 'action_id': CONNECTION_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.github.reconnection', language))}
 
     confirmation = {'title': _plain(threadvault.localisation.translate('disconnection.title', language)), 'text': _plain(threadvault.localisation.translate('disconnection.text', language)), 'confirm': _plain(threadvault.localisation.translate('disconnection.confirm', language)), 'deny': _plain(threadvault.localisation.translate('disconnection.deny', language)), 'style': 'danger'}
 

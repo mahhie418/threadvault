@@ -3,6 +3,7 @@
 import collections.abc
 import dataclasses
 import datetime
+import http
 import json
 import logging
 import threading
@@ -69,7 +70,15 @@ def register(
 
             installations = threadvault.github.rest.installations(manager.acquire(datetime.datetime.now(datetime.UTC)))
 
-        except (threadvault.github.token.TokenError, threadvault.github.rest.GitHubError) as error:
+        except threadvault.github.token.TokenError as error:
+
+            _LOGGER.warning('GitHub must be connected again: %s', error)
+
+            return 'expired'
+
+        except threadvault.github.rest.GitHubError as error:
+
+            if error.status == http.HTTPStatus.UNAUTHORIZED: return 'expired'
 
             _LOGGER.warning('GitHub App installations were not checked: %s', error)
 
