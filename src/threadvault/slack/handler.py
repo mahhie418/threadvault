@@ -246,7 +246,7 @@ def register(
         directory = pathlib.Path(os.path.join(settings.threadvault_data_directory, threadvault.backup.runner.VAULTS_DIRECTORY, *workspace.repository_name.split('/')))
 
         try: threadvault.backup.runner.publish(application.client, workspace, directory = directory, full_name = workspace.repository_name, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = settings.threadvault_lookback_days, limit = settings.threadvault_deletions_maximum, now = datetime.datetime.now(datetime.UTC))
-        except (threadvault.backup.runner.VaultError, threadvault.github.rest.GitHubError, threadvault.github.token.TokenError, threadvault.vault.repository.GitError, threadvault.vault.state.StateError, slack_sdk.errors.SlackApiError) as error: _LOGGER.warning('Backup failed: %s', error)
+        except (threadvault.backup.runner.VaultError, threadvault.backup.runner.LockError, threadvault.github.rest.GitHubError, threadvault.github.token.TokenError, threadvault.vault.repository.GitError, threadvault.vault.state.StateError, slack_sdk.errors.SlackApiError) as error: _LOGGER.warning('Backup failed: %s', error)
 
     def publish(
         event: dict[str, typing.Any],

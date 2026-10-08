@@ -60,6 +60,11 @@ CONNECTIONS_EXPIRED = [
     (TOKENS_SAVED, httpx.Response(401, json = {'message': 'Bad credentials'}))
 ]
 
+ERRORS_BACKUP = [
+    threadvault.backup.runner.VaultError('xxx'),
+    threadvault.backup.runner.LockError('xxx')
+]
+
 DESTINATIONS_REFUSED = [
     ('xxx/xxx', httpx.Response(404, json = {'message': 'Not Found'}), 'absence', ''),
     ('xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': False}), 'publicity', ''),
@@ -645,15 +650,17 @@ def test_handler_backup_start(
     assert runs == [('xxx/xxx', 'xxx/xxx', ('vaults', 'xxx', 'xxx'), 'ghu_xxx', 30, None, datetime.UTC)]
     assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'connected', destination = 'xxx/xxx', running = running, role = 'owner', slug = 'xxx', language = 'ja')} for running in (True, False)]
 
+@pytest.mark.parametrize('error', ERRORS_BACKUP)
 def test_handler_backup_failure(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
     application: slack_bolt.App,
     workspace: dict[str, typing.Any],
-    database: threadvault.storage.Database
+    database: threadvault.storage.Database,
+    error: Exception
 ) -> None:
 
-    monkeypatch.setattr(threadvault.backup.runner, 'publish', unittest.mock.Mock(side_effect = threadvault.backup.runner.VaultError('xxx')))
+    monkeypatch.setattr(threadvault.backup.runner, 'publish', unittest.mock.Mock(side_effect = error))
     threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = 'xxx/xxx'), update_user = 'UXXX1')
 
     assert press(application, 'UXXX1', threadvault.slack.view.BACKUP_ACTION).status == 200

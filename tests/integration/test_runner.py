@@ -345,6 +345,19 @@ def test_runner_vault_exposure(
 
     assert git('log', '--format=%s', 'main', directory = remote).splitlines() == ['xxx']
 
+def test_runner_vault_lock(
+    tmp_path: pathlib.Path,
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    directory = pathlib.Path(os.path.join(tmp_path, 'clone'))
+
+    with threadvault.backup.runner.hold(directory), pytest.raises(threadvault.backup.runner.LockError, match = 'already writing'): publish(slack, directory)
+    with threadvault.backup.runner.hold(directory), pytest.raises(threadvault.backup.runner.LockError, match = 'already writing'), threadvault.backup.runner.hold(directory): pass
+    with threadvault.backup.runner.hold(directory), threadvault.backup.runner.hold(pathlib.Path(os.path.join(tmp_path, 'xxx'))): pass
+
+    assert not directory.exists()
+
 def test_runner_vault_git(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

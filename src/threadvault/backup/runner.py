@@ -1,6 +1,7 @@
 """One run that backs up the workspace into a vault directory, or into its vault on GitHub."""
 
 import collections.abc
+import contextlib
 import dataclasses
 import datetime
 import itertools
@@ -8,6 +9,7 @@ import json
 import logging
 import os
 import pathlib
+import sqlite3
 import typing
 
 import slack_sdk
@@ -31,6 +33,10 @@ _ATTRIBUTES_CONTENT = '*.json text eol=lf\n*.md text eol=lf\n'
 VAULTS_DIRECTORY = 'vaults'
 
 _LOGGER = logging.getLogger(__name__)
+
+class LockError(Exception):
+
+    """Raised when another backup is already writing the clone of the vault."""
 
 class VaultError(Exception):
 
@@ -179,6 +185,9 @@ def publish(
     goes into one commit at the end. Before every push, the repository must
     still be private.
 
+    The backup holds the lock of the clone throughout, as `hold` does, so
+    that no other backup writes the clone meanwhile.
+
     Args:
         client: Slack client for the workspace.
         settings: Settings of the workspace.
@@ -193,6 +202,7 @@ def publish(
         What the run did to each channel, in the order of conversations.list.
 
     Raises:
+        LockError: Another backup is already writing the clone.
         VaultError: The repository is public, or has disappeared.
         threadvault.github.rest.GitHubError: GitHub refused a request, or could not be reached.
         threadvault.vault.repository.GitError: git is missing or too old, or a git command failed.
@@ -200,31 +210,70 @@ def publish(
         threadvault.vault.state.StateError: The state file of the vault cannot be used.
     """
 
-    threadvault.vault.repository.verify()
+    with hold(directory):
 
-    found = threadvault.github.rest.repository(token(), full_name) or threadvault.github.rest.create(token(), full_name)
+        threadvault.vault.repository.verify()
 
-    if not found['private']: raise VaultError(f'{full_name} is public; {threadvault.product.NAME} backs up only into private repositories')
+        found = threadvault.github.rest.repository(token(), full_name) or threadvault.github.rest.create(token(), full_name)
 
-    user = threadvault.github.rest.user(token())
-    repository = threadvault.vault.repository.Repository(directory, token = token, name = user['login'], email = f'{user['id']}+{user['login']}@users.noreply.github.com')
+        if not found['private']: raise VaultError(f'{full_name} is public; {threadvault.product.NAME} backs up only into private repositories')
 
-    if pathlib.Path(os.path.join(directory, '.git')).is_dir(): repository.refresh()
-    else: repository.clone(found['clone_url'])
+        user = threadvault.github.rest.user(token())
+        repository = threadvault.vault.repository.Repository(directory, token = token, name = user['login'], email = f'{user['id']}+{user['login']}@users.noreply.github.com')
 
-    _prepare(directory, full_name.partition('/')[2], settings.markdown_language)
+        if pathlib.Path(os.path.join(directory, '.git')).is_dir(): repository.refresh()
+        else: repository.clone(found['clone_url'])
 
-    def checkpoint(
-        result: Result
-    ) -> None:
+        _prepare(directory, full_name.partition('/')[2], settings.markdown_language)
 
-        _push(repository, f'Back up #{result.directory}', token, full_name)
+        def checkpoint(
+            result: Result
+        ) -> None:
 
-    results = run(client, directory, settings, days = days, limit = limit, now = now, checkpoint = checkpoint)
+            _push(repository, f'Back up #{result.directory}', token, full_name)
 
-    _push(repository, f'Back up at {now:%Y-%m-%d %H:%M} UTC', token, full_name)
+        results = run(client, directory, settings, days = days, limit = limit, now = now, checkpoint = checkpoint)
 
-    return results
+        _push(repository, f'Back up at {now:%Y-%m-%d %H:%M} UTC', token, full_name)
+
+        return results
+
+@contextlib.contextmanager
+def hold(
+    directory: pathlib.Path
+) -> collections.abc.Generator[None]:
+
+    """Holds the lock of the clone of a vault while a backup writes it.
+
+    The lock file sits next to the clone. As with the lock of the app, it is
+    a SQLite database held in an exclusive transaction, which works alike on
+    every operating system, and the lock goes when the process ends, even
+    when it crashes.
+
+    Args:
+        directory: Directory of the clone; its parent is created when missing.
+
+    Yields:
+        Nothing; the lock is held until the block ends.
+
+    Raises:
+        LockError: Another backup holds the lock.
+    """
+
+    directory.parent.mkdir(parents = True, exist_ok = True)
+
+    connection = sqlite3.connect(pathlib.Path(os.path.join(directory.parent, f'{directory.name}.lock')), timeout = 0, autocommit = True)
+
+    try:
+
+        try: connection.execute('BEGIN EXCLUSIVE')
+        except sqlite3.OperationalError: raise LockError(f'Another backup is already writing {directory}') from None
+
+        yield
+
+    finally:
+
+        connection.close()
 
 def _prepare(
     directory: pathlib.Path,

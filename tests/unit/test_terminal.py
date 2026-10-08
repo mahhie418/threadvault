@@ -10,6 +10,7 @@ import respx
 import slack_bolt
 import slack_sdk
 
+import threadvault.backup.runner
 import threadvault.encryption
 import threadvault.github.oauth
 import threadvault.github.rest
@@ -20,9 +21,10 @@ import threadvault.storage
 import threadvault.terminal
 
 TOKENS_BACKUP = [
-    ('xoxb-xxx', ['--out', 'xxx'], 0, 'xxx: 0 messages, 0 deleted, 0 withheld, 0 files, 0 failures\ngeneral: 5 messages, 0 deleted, 0 withheld, 0 files, 0 failures\n', ''),
-    ('', ['--out', 'xxx'], 1, '', 'error: Missing required environment variables: SLACK_BOT_TOKEN\n'),
-    ('xoxb-xxx', ['--repo', 'xxx/xxx'], 1, '', 'error: GitHub is not connected yet\n')
+    ('xoxb-xxx', ['--out', 'xxx'], contextlib.nullcontext, 0, 'xxx: 0 messages, 0 deleted, 0 withheld, 0 files, 0 failures\ngeneral: 5 messages, 0 deleted, 0 withheld, 0 files, 0 failures\n', ''),
+    ('', ['--out', 'xxx'], contextlib.nullcontext, 1, '', 'error: Missing required environment variables: SLACK_BOT_TOKEN\n'),
+    ('xoxb-xxx', ['--repo', 'xxx/xxx'], contextlib.nullcontext, 1, '', 'error: GitHub is not connected yet\n'),
+    ('xoxb-xxx', ['--repo', 'xxx/xxx'], threadvault.backup.runner.hold, 1, '', 'error: Another backup is already writing {directory}\n')
 ]
 
 ENVIRONMENTS_SERVE = [
@@ -64,7 +66,7 @@ def test_terminal_command_generate_key(
 
     cryptography.fernet.Fernet(capsys.readouterr().out.strip())
 
-@pytest.mark.parametrize(('token', 'arguments', 'status', 'out', 'err'), TOKENS_BACKUP)
+@pytest.mark.parametrize(('token', 'arguments', 'holder', 'status', 'out', 'err'), TOKENS_BACKUP)
 def test_terminal_command_backup_now(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -72,10 +74,13 @@ def test_terminal_command_backup_now(
     slack: slack_sdk.web.WebClient,
     token: str,
     arguments: list[str],
+    holder: collections.abc.Callable[[pathlib.Path], contextlib.AbstractContextManager[object]],
     status: int,
     out: str,
     err: str
 ) -> None:
+
+    directory = pathlib.Path(os.path.join(tmp_path, threadvault.backup.runner.VAULTS_DIRECTORY, 'xxx', 'xxx'))
 
     def connect(
         _: str
@@ -90,8 +95,8 @@ def test_terminal_command_backup_now(
     monkeypatch.setenv('THREADVAULT_SECRET_KEY', threadvault.encryption.generate())
     monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
 
-    assert threadvault.terminal.main(['backup-now', *arguments]) == status
-    assert capsys.readouterr() == (out, err)
+    with holder(directory): assert threadvault.terminal.main(['backup-now', *arguments]) == status
+    assert capsys.readouterr() == (out, err.format(directory = directory))
 
 @pytest.mark.parametrize(('client', 'status', 'out', 'err', 'tokens'), CLIENTS_LOGIN)
 def test_terminal_command_github_login(
