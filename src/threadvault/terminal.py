@@ -104,7 +104,7 @@ def _backup_now(
             cipher = threadvault.encryption.SecretCipher(threadvault.encryption.load(settings.threadvault_secret_key, settings.threadvault_data_directory))
             database = threadvault.storage.Database(pathlib.Path(os.path.join(settings.threadvault_data_directory, threadvault.storage.DATABASE_FILE)))
             manager = threadvault.github.token.TokenManager(database, cipher, settings.github_app_client_id)
-            directory = pathlib.Path(os.path.join(settings.threadvault_data_directory, 'vaults', *repository.split('/')))
+            directory = pathlib.Path(os.path.join(settings.threadvault_data_directory, threadvault.backup.runner.VAULTS_DIRECTORY, *repository.split('/')))
 
             try: results = threadvault.backup.runner.publish(client, workspace, directory = directory, full_name = repository, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = settings.threadvault_lookback_days, limit = settings.threadvault_deletions_maximum, now = now)
             finally: database.close()

@@ -6,12 +6,15 @@ import datetime
 import http
 import json
 import logging
+import os
+import pathlib
 import threading
 import typing
 
 import slack_bolt
 import slack_sdk.errors
 
+import threadvault.backup.runner
 import threadvault.configuration
 import threadvault.customisation
 import threadvault.github.oauth
@@ -22,6 +25,9 @@ import threadvault.product
 import threadvault.slack.permission
 import threadvault.slack.view
 import threadvault.storage
+import threadvault.vault.repository
+import threadvault.vault.state
+import threadvault.worker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,7 +50,9 @@ def register(
     or the ownership change, both the admin and the owner hear of it by
     direct message, and the owner and every admin hear by direct message
     when GitHub is connected or disconnected, or when the destination is
-    chosen or created.
+    chosen or created. A backup started from the App Home runs in the
+    background, one at a time, as `threadvault.worker.Worker` makes sure, and
+    the App Home of whoever started it shows the backup while it runs.
 
     Args:
         application: The application.
@@ -55,6 +63,7 @@ def register(
 
     store = threadvault.customisation.SettingsIO(database)
     cache = threadvault.github.rest.RepositoryCache()
+    worker = threadvault.worker.Worker(detach)
     guard = [threadvault.slack.permission.restrict(settings, store, frozenset({'owner'}))]
 
     def choose(
@@ -96,7 +105,7 @@ def register(
 
         workspace = store.load(team)
 
-        application.client.views_publish(user_id = user, view = threadvault.slack.view.home(github = inspect(), destination = workspace.repository_name, role = threadvault.slack.permission.role(settings, workspace, user), slug = settings.github_app_slug, language = choose(user)))
+        application.client.views_publish(user_id = user, view = threadvault.slack.view.home(github = inspect(), destination = workspace.repository_name, running = worker.busy(), role = threadvault.slack.permission.role(settings, workspace, user), slug = settings.github_app_slug, language = choose(user)))
 
     def show(
         modal: str,
@@ -223,6 +232,22 @@ def register(
         show(modal, threadvault.slack.view.establish(repository = repository, outcome = 'success', language = language))
         notify(team, 'notice.creation', user, repository = repository)
 
+    def perform(
+        team: str,
+        user: str
+    ) -> None:
+
+        refresh(team, user)
+
+        workspace = store.load(team)
+
+        if workspace.repository_name is None: return
+
+        directory = pathlib.Path(os.path.join(settings.threadvault_data_directory, threadvault.backup.runner.VAULTS_DIRECTORY, *workspace.repository_name.split('/')))
+
+        try: threadvault.backup.runner.publish(application.client, workspace, directory = directory, full_name = workspace.repository_name, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = settings.threadvault_lookback_days, limit = settings.threadvault_deletions_maximum, now = datetime.datetime.now(datetime.UTC))
+        except (threadvault.backup.runner.VaultError, threadvault.github.rest.GitHubError, threadvault.github.token.TokenError, threadvault.vault.repository.GitError, threadvault.vault.state.StateError, slack_sdk.errors.SlackApiError) as error: _LOGGER.warning('Backup failed: %s', error)
+
     def publish(
         event: dict[str, typing.Any],
         context: slack_bolt.BoltContext
@@ -331,6 +356,19 @@ def register(
 
         ack(response_action = 'update', view = threadvault.slack.view.establish(repository = repository, outcome = 'check', language = language))
         detach(lambda: establish(team, user, view['id'], repository, language))
+
+    def launch(
+        ack: slack_bolt.Ack,
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        ack()
+
+        team, user = context.team_id, context.user_id
+
+        if team is None or user is None: return
+
+        if not worker.start(lambda: perform(team, user), lambda: refresh(team, user)): refresh(team, user)
 
     def manage(
         ack: slack_bolt.Ack,
@@ -454,6 +492,7 @@ def register(
     application.options(threadvault.slack.view.REPOSITORY_ACTION)(suggest)
     application.action(threadvault.slack.view.CREATION_ACTION)(propose)
     application.view(threadvault.slack.view.CREATION_CALLBACK)(create)
+    application.action(threadvault.slack.view.BACKUP_ACTION)(launch)
     application.action(threadvault.slack.view.PERMISSIONS_ACTION, middleware = guard)(manage)
     application.view(threadvault.slack.view.PERMISSIONS_CALLBACK, middleware = guard)(review)
     application.view(threadvault.slack.view.PERMISSIONS_CONFIRMATION, middleware = guard)(apply)

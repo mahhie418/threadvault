@@ -5,6 +5,7 @@ import os
 import pathlib
 import threading
 import typing
+import unittest.mock
 
 import httpx
 import pytest
@@ -13,6 +14,7 @@ import slack_bolt
 import slack_sdk
 import slack_sdk.errors
 
+import threadvault.backup.runner
 import threadvault.configuration
 import threadvault.customisation
 import threadvault.encryption
@@ -25,6 +27,7 @@ import threadvault.slack.handler
 import threadvault.slack.permission
 import threadvault.slack.view
 import threadvault.storage
+import threadvault.worker
 
 NOW = datetime.datetime.now(datetime.UTC)
 
@@ -200,7 +203,7 @@ def test_handler_home_publication(
 
         assert home(application, user, 'home').status == 200
 
-    assert calls(workspace, 'views.publish') == [{'user_id': user, 'view': threadvault.slack.view.home(github = 'connected', destination = 'xxx/xxx', role = role, slug = 'xxx', language = 'ja')}]
+    assert calls(workspace, 'views.publish') == [{'user_id': user, 'view': threadvault.slack.view.home(github = 'connected', destination = 'xxx/xxx', running = False, role = role, slug = 'xxx', language = 'ja')}]
 
 def test_handler_home_locale(
     application: slack_bolt.App,
@@ -211,7 +214,7 @@ def test_handler_home_locale(
 
     assert home(application, 'UXXX1', 'home').status == 200
     assert calls(workspace, 'users.info') == [{'user': 'UXXX1', 'include_locale': True}]
-    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'disconnected', destination = None, role = 'owner', slug = 'xxx', language = 'en')}]
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'disconnected', destination = None, running = False, role = 'owner', slug = 'xxx', language = 'en')}]
 
 @pytest.mark.parametrize(('tab', 'count'), TABS_OPENED)
 def test_handler_home_tab(
@@ -223,7 +226,7 @@ def test_handler_home_tab(
 
     home(application, 'UXXX1', tab)
 
-    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'disconnected', destination = None, role = 'owner', slug = 'xxx', language = 'ja')}] * count
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'disconnected', destination = None, running = False, role = 'owner', slug = 'xxx', language = 'ja')}] * count
 
 def test_handler_github_connection(
     application: slack_bolt.App,
@@ -244,7 +247,7 @@ def test_handler_github_connection(
     assert manager.acquire(datetime.datetime.now(datetime.UTC)) == 'ghu_xxx'
     assert calls(workspace, 'views.open') == [{'trigger_id': 'xxx', 'view': threadvault.slack.view.connect(code = None, language = 'ja')}]
     assert calls(workspace, 'views.update') == [{'view_id': 'VXXX', 'view': threadvault.slack.view.connect(code = CODE, language = 'ja')}, {'view_id': 'VXXX', 'view': threadvault.slack.view.respond(error = None, language = 'ja')}]
-    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'connected', destination = None, role = 'owner', slug = 'xxx', language = 'ja')}]
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'connected', destination = None, running = False, role = 'owner', slug = 'xxx', language = 'ja')}]
     assert calls(workspace, 'chat.postMessage') == [{'channel': 'UXXX1', 'text': threadvault.localisation.translate('notice.connection', 'ja', user = 'UXXX1')}, {'channel': 'UXXX2', 'text': threadvault.localisation.translate('notice.connection', 'en', user = 'UXXX1')}]
 
 def test_handler_github_disconnection(
@@ -257,7 +260,7 @@ def test_handler_github_disconnection(
 
     assert press(application, 'UXXX1', threadvault.slack.view.DISCONNECTION_ACTION).status == 200
     assert not manager.connected()
-    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'disconnected', destination = None, role = 'owner', slug = 'xxx', language = 'ja')}]
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'disconnected', destination = None, running = False, role = 'owner', slug = 'xxx', language = 'ja')}]
     assert calls(workspace, 'chat.postMessage') == [{'channel': admin, 'text': threadvault.localisation.translate('notice.disconnection', 'ja', user = 'UXXX1')} for admin in ('UXXX1', 'UXXX2')]
 
 @pytest.mark.parametrize(('response', 'github'), INSTALLATIONS_LISTED)
@@ -277,7 +280,7 @@ def test_handler_github_installation(
 
         assert home(application, 'UXXX1', 'home').status == 200
 
-    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = github, destination = None, role = 'owner', slug = 'xxx', language = 'ja')}]
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = github, destination = None, running = False, role = 'owner', slug = 'xxx', language = 'ja')}]
 
 @pytest.mark.parametrize(('code', 'tokens', 'reason'), CONNECTIONS_FAILED)
 def test_handler_github_failure(
@@ -345,7 +348,7 @@ def test_handler_github_expiry(
 
         assert home(application, 'UXXX1', 'home').status == 200
 
-    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'expired', destination = None, role = 'owner', slug = 'xxx', language = 'ja')}]
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'expired', destination = None, running = False, role = 'owner', slug = 'xxx', language = 'ja')}]
 
 @pytest.mark.parametrize(('user', 'allowed', 'count'), CONNECTIONS_PERMITTED)
 def test_handler_github_permission(
@@ -445,7 +448,7 @@ def test_handler_destination_choice(
     assert json.loads(response.body) == {'response_action': 'update', 'view': threadvault.slack.view.settle(repository = 'xxx/xxx', outcome = 'check', language = 'ja')}
     assert threadvault.customisation.SettingsIO(database).load('TXXX').repository_name == 'xxx/xxx'
     assert calls(workspace, 'views.update') == [{'view_id': 'VXXX', 'view': threadvault.slack.view.settle(repository = 'xxx/xxx', outcome = 'success', language = 'ja')}]
-    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'connected', destination = 'xxx/xxx', role = 'owner', slug = 'xxx', language = 'ja')}]
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'connected', destination = 'xxx/xxx', running = False, role = 'owner', slug = 'xxx', language = 'ja')}]
     assert calls(workspace, 'chat.postMessage') == [{'channel': admin, 'text': threadvault.localisation.translate('notice.destination', 'ja', user = 'UXXX1', repository = 'xxx/xxx')} for admin in ('UXXX1', 'UXXX2')]
 
 def test_handler_destination_concurrency(
@@ -550,7 +553,7 @@ def test_handler_creation_success(
     assert json.loads(route.calls.last.request.content) == {'name': 'xxx1', 'private': True, 'auto_init': True}
     assert threadvault.customisation.SettingsIO(database).load('TXXX').repository_name == 'xxx/xxx1'
     assert calls(workspace, 'views.update') == [{'view_id': 'VXXX', 'view': threadvault.slack.view.establish(repository = 'xxx/xxx1', outcome = 'success', language = 'ja')}]
-    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'connected', destination = 'xxx/xxx1', role = 'owner', slug = 'xxx', language = 'ja')}]
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'connected', destination = 'xxx/xxx1', running = False, role = 'owner', slug = 'xxx', language = 'ja')}]
     assert calls(workspace, 'chat.postMessage') == [{'channel': admin, 'text': threadvault.localisation.translate('notice.creation', 'ja', user = 'UXXX1', repository = 'xxx/xxx1')} for admin in ('UXXX1', 'UXXX2')]
 
 def test_handler_creation_concurrency(
@@ -602,6 +605,104 @@ def test_handler_creation_failure(
     assert threadvault.customisation.SettingsIO(database).load('TXXX').repository_name is None
     assert calls(workspace, 'views.update') == [{'view_id': 'VXXX', 'view': threadvault.slack.view.establish(repository = f'xxx/{name}', outcome = 'failure', language = 'ja', message = message)}]
     assert calls(workspace, 'chat.postMessage') == []
+
+def test_handler_backup_start(
+    monkeypatch: pytest.MonkeyPatch,
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database,
+    manager: threadvault.github.token.TokenManager
+) -> None:
+
+    runs = []
+
+    def publish(
+        _: slack_sdk.web.WebClient,
+        settings: threadvault.customisation.Settings,
+        *,
+        directory: pathlib.Path,
+        full_name: str,
+        token: collections.abc.Callable[[], str],
+        days: int,
+        limit: int | None,
+        now: datetime.datetime
+    ) -> list[threadvault.backup.runner.Result]:
+
+        runs.append((settings.repository_name, full_name, directory.parts[-3:], token(), days, limit, now.tzinfo))
+
+        return []
+
+    monkeypatch.setattr(threadvault.backup.runner, 'publish', publish)
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = 'xxx/xxx'), update_user = 'UXXX1')
+    manager.save(TOKENS_SAVED)
+
+    with respx.mock:
+
+        respx.get(f'{threadvault.github.rest.API_URL}/user/installations').respond(200, json = INSTALLATIONS_RESPONDED)
+
+        assert press(application, 'UXXX1', threadvault.slack.view.BACKUP_ACTION).status == 200
+
+    assert runs == [('xxx/xxx', 'xxx/xxx', ('vaults', 'xxx', 'xxx'), 'ghu_xxx', 30, None, datetime.UTC)]
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'connected', destination = 'xxx/xxx', running = running, role = 'owner', slug = 'xxx', language = 'ja')} for running in (True, False)]
+
+def test_handler_backup_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database
+) -> None:
+
+    monkeypatch.setattr(threadvault.backup.runner, 'publish', unittest.mock.Mock(side_effect = threadvault.backup.runner.VaultError('xxx')))
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = 'xxx/xxx'), update_user = 'UXXX1')
+
+    assert press(application, 'UXXX1', threadvault.slack.view.BACKUP_ACTION).status == 200
+    assert 'Backup failed: xxx' in caplog.text
+    assert [arguments['view'] for arguments in calls(workspace, 'views.publish')] == [threadvault.slack.view.home(github = 'disconnected', destination = 'xxx/xxx', running = running, role = 'owner', slug = 'xxx', language = 'ja') for running in (True, False)]
+
+def test_handler_backup_absence(
+    monkeypatch: pytest.MonkeyPatch,
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any]
+) -> None:
+
+    publish = unittest.mock.Mock(return_value = [])
+
+    monkeypatch.setattr(threadvault.backup.runner, 'publish', publish)
+
+    assert press(application, 'UXXX1', threadvault.slack.view.BACKUP_ACTION).status == 200
+    assert not publish.called
+    assert [arguments['view'] for arguments in calls(workspace, 'views.publish')] == [threadvault.slack.view.home(github = 'disconnected', destination = None, running = running, role = 'owner', slug = 'xxx', language = 'ja') for running in (True, False)]
+
+def test_handler_backup_exclusivity(
+    monkeypatch: pytest.MonkeyPatch,
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database
+) -> None:
+
+    def busy(
+        _: threadvault.worker.Worker
+    ) -> bool:
+
+        return True
+
+    def start(
+        *_: object
+    ) -> bool:
+
+        return False
+
+    publish = unittest.mock.Mock(return_value = [])
+
+    monkeypatch.setattr(threadvault.backup.runner, 'publish', publish)
+    monkeypatch.setattr(threadvault.worker.Worker, 'busy', busy)
+    monkeypatch.setattr(threadvault.worker.Worker, 'start', start)
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = 'xxx/xxx'), update_user = 'UXXX1')
+
+    assert press(application, 'UXXX1', threadvault.slack.view.BACKUP_ACTION).status == 200
+    assert not publish.called
+    assert [arguments['view'] for arguments in calls(workspace, 'views.publish')] == [threadvault.slack.view.home(github = 'disconnected', destination = 'xxx/xxx', running = True, role = 'owner', slug = 'xxx', language = 'ja')]
 
 def test_handler_permission_grant(
     application: slack_bolt.App,
@@ -693,7 +794,7 @@ def test_handler_transfer_completion(
     assert json.loads(nomination.body) == {'response_action': 'push', 'view': confirmation}
     assert json.loads(submit(application, 'UXXX1', confirmation).body) == {'response_action': 'clear'}
     assert threadvault.customisation.SettingsIO(database).load('TXXX') == threadvault.customisation.Settings(owner_id = 'UXXX2', admins_allowed = expected)
-    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'disconnected', destination = None, role = 'operator', slug = 'xxx', language = 'ja')}, {'user_id': 'UXXX2', 'view': threadvault.slack.view.home(github = 'disconnected', destination = None, role = 'owner', slug = 'xxx', language = 'ja')}]
+    assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'disconnected', destination = None, running = False, role = 'operator', slug = 'xxx', language = 'ja')}, {'user_id': 'UXXX2', 'view': threadvault.slack.view.home(github = 'disconnected', destination = None, running = False, role = 'owner', slug = 'xxx', language = 'ja')}]
     assert calls(workspace, 'chat.postMessage') == [{'channel': 'UXXX2', 'text': threadvault.localisation.translate('notice.ownership', 'ja', owner = 'UXXX1', product = threadvault.product.NAME)}, {'channel': 'UXXX1', 'text': threadvault.localisation.translate('notice.ownership.done', 'ja', user = 'UXXX2', product = threadvault.product.NAME)}]
 
 @pytest.mark.parametrize('successor', SUCCESSORS_INVALID)

@@ -46,6 +46,16 @@ VIEWERS_INSTALLATION = [
     ({'github': 'uninstalled', 'role': 'member'}, [])
 ]
 
+VIEWERS_BACKUP = [
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'owner'}, [(threadvault.slack.view.BACKUP_ACTION, 'Back up now')], ['You are the owner.']),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'operator'}, [(threadvault.slack.view.BACKUP_ACTION, 'Back up now')], ['You are an admin with permission to operate the app.']),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'admin'}, [], ['You are an admin without permission to operate the app.']),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': True, 'role': 'owner'}, [], ['You are the owner.', 'Backing up the workspace…']),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': True, 'role': 'member'}, [], ['Backing up the workspace…']),
+    ({'github': 'connected', 'destination': None, 'running': False, 'role': 'owner'}, [], ['You are the owner.']),
+    ({'github': 'uninstalled', 'destination': 'xxx/xxx', 'running': False, 'role': 'owner'}, [], ['You are the owner.'])
+]
+
 DESTINATIONS_CURRENT = [
     (None, []),
     ('xxx/xxx', ['xxx/xxx'])
@@ -94,7 +104,7 @@ def test_view_home_status(
     texts: list[str]
 ) -> None:
 
-    view = threadvault.slack.view.home(**state, slug = 'xxx')
+    view = threadvault.slack.view.home(**state, running = False, slug = 'xxx')
 
     assert view['type'] == 'home'
     assert [field['text'] for block in view['blocks'] if 'fields' in block for field in block['fields']] == texts
@@ -105,7 +115,7 @@ def test_view_home_role(
     texts: list[str]
 ) -> None:
 
-    view = threadvault.slack.view.home(github = 'disconnected', destination = None, role = role, slug = 'xxx', language = 'en')
+    view = threadvault.slack.view.home(github = 'disconnected', destination = None, running = False, role = role, slug = 'xxx', language = 'en')
 
     assert [element['text'] for block in view['blocks'] if block['type'] == 'context' for element in block['elements']] == texts
 
@@ -115,9 +125,21 @@ def test_view_home_connection(
     buttons: list[tuple[str, str, bool]]
 ) -> None:
 
-    view = threadvault.slack.view.home(**state, destination = None, slug = 'xxx', language = 'en')
+    view = threadvault.slack.view.home(**state, destination = None, running = False, slug = 'xxx', language = 'en')
 
     assert [(element['action_id'], element['text']['text'], 'confirm' in element) for block in view['blocks'] if block['type'] == 'actions' for element in block['elements']] == buttons
+
+@pytest.mark.parametrize(('state', 'buttons', 'notes'), VIEWERS_BACKUP)
+def test_view_home_backup(
+    state: dict[str, typing.Any],
+    buttons: list[tuple[str, str]],
+    notes: list[str]
+) -> None:
+
+    view = threadvault.slack.view.home(**state, slug = 'xxx', language = 'en')
+
+    assert [(element['action_id'], element['text']['text']) for block in view['blocks'] if block['type'] == 'actions' for element in block['elements'] if element['action_id'] == threadvault.slack.view.BACKUP_ACTION] == buttons
+    assert [element['text'] for block in view['blocks'] if block['type'] == 'context' for element in block['elements']] == notes
 
 @pytest.mark.parametrize(('state', 'texts'), VIEWERS_INSTALLATION)
 def test_view_home_installation(
@@ -125,7 +147,7 @@ def test_view_home_installation(
     texts: list[str]
 ) -> None:
 
-    view = threadvault.slack.view.home(**state, destination = None, slug = 'xxx1', language = 'en')
+    view = threadvault.slack.view.home(**state, destination = None, running = False, slug = 'xxx1', language = 'en')
 
     assert [block['text']['text'] for block in view['blocks'] if 'text' in block] == texts
 

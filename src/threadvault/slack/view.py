@@ -12,6 +12,7 @@ type GitHubState = typing.Literal['connected', 'disconnected', 'expired', 'unins
 type DestinationOutcome = typing.Literal['check', 'success', 'absence', 'publicity', 'failure']
 type CreationOutcome = typing.Literal['check', 'success', 'failure']
 
+BACKUP_ACTION = 'backup_action'
 CONNECTION_ACTION = 'connection_action'
 DISCONNECTION_ACTION = 'disconnection_action'
 DESTINATION_ACTION = 'destination_action'
@@ -40,12 +41,17 @@ def home(
     *,
     github: GitHubState,
     destination: str | None,
+    running: bool,
     role: threadvault.slack.permission.Role,
     slug: str,
     language: threadvault.configuration.Language
 ) -> dict[str, typing.Any]:
 
     """Builds the App Home, which shows the state of the backup.
+
+    While a backup is running, everyone sees so. Otherwise, while GitHub is
+    connected and the destination is chosen, the owner and the admins allowed
+    to operate the app see a button that backs up the workspace at once.
 
     The owner and the admins also see the destination and their own role.
     The owner and the admins allowed to operate the app see a button that
@@ -61,6 +67,7 @@ def home(
                 no installation that the connected account can access, or
                 connected.
         destination: Repository of the vault, as owner/name, or None while none is chosen.
+        running: Whether a backup is running.
         role: Role of the viewer.
         slug: URL slug of the GitHub App.
         language: Language of the viewer.
@@ -84,6 +91,9 @@ def home(
         blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate(f'home.role.{role}', language)}]})
 
     blocks.append({'type': 'section', 'fields': [_text(title, text) for title, text in fields]})
+
+    if running: blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate('home.backup.running', language)}]})
+    elif role in ('owner', 'operator') and github == 'connected' and destination: blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': BACKUP_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.backup', language))}]})
 
     buttons = [_button(github = github, language = language)]
 

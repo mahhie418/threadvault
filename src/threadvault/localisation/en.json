@@ -32,6 +32,8 @@
   "disconnection.deny": "Cancel",
   "disconnection.text": "Backups to GitHub stop until GitHub is connected again.",
   "disconnection.title": "Disconnect GitHub?",
+  "home.backup": "Back up now",
+  "home.backup.running": "Backing up the workspace…",
   "home.destination": "Destination",
   "home.destination.choice": "Choose destination",
   "home.destination.creation": "Create repository",

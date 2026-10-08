@@ -32,6 +32,8 @@
   "disconnection.deny": "キャンセル",
   "disconnection.text": "GitHub と再び連携するまで、GitHub へのバックアップは止まります。",
   "disconnection.title": "GitHub との連携を解除しますか？",
+  "home.backup": "今すぐバックアップ",
+  "home.backup.running": "バックアップしています…",
   "home.destination": "保存先",
   "home.destination.choice": "保存先を選ぶ",
   "home.destination.creation": "リポジトリを作る",

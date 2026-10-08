@@ -28,6 +28,7 @@ import threadvault.vault.state
 
 ATTRIBUTES_FILE = '.gitattributes'
 _ATTRIBUTES_CONTENT = '*.json text eol=lf\n*.md text eol=lf\n'
+VAULTS_DIRECTORY = 'vaults'
 
 _LOGGER = logging.getLogger(__name__)
 
