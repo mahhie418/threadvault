@@ -20,6 +20,7 @@ import threadvault.customisation
 import threadvault.github.oauth
 import threadvault.github.rest
 import threadvault.github.token
+import threadvault.journal
 import threadvault.localisation
 import threadvault.product
 import threadvault.slack.permission
@@ -52,16 +53,18 @@ def register(
     when GitHub is connected or disconnected, or when the destination is
     chosen or created. A backup started from the App Home runs in the
     background, one at a time, as `threadvault.worker.Worker` makes sure, and
-    the App Home of whoever started it shows the backup while it runs.
+    the App Home of whoever started it shows the backup while it runs. Every
+    App Home shows how the last backup ended.
 
     Args:
         application: The application.
         settings: Settings of the deployment.
-        database: Database with the settings of each workspace.
+        database: Database with the settings of each workspace and the record of its backups.
         manager: GitHub tokens of the deployment.
     """
 
     store = threadvault.customisation.SettingsIO(database)
+    journal = threadvault.journal.RunIO(database)
     cache = threadvault.github.rest.RepositoryCache()
     worker = threadvault.worker.Worker(detach)
     guard = [threadvault.slack.permission.restrict(settings, store, frozenset({'owner'}))]
@@ -105,7 +108,7 @@ def register(
 
         workspace = store.load(team)
 
-        application.client.views_publish(user_id = user, view = threadvault.slack.view.home(github = inspect(), destination = workspace.repository_name, running = worker.busy(), role = threadvault.slack.permission.role(settings, workspace, user), slug = settings.github_app_slug, language = choose(user)))
+        application.client.views_publish(user_id = user, view = threadvault.slack.view.home(github = inspect(), destination = workspace.repository_name, running = worker.busy(), last = journal.load(team), role = threadvault.slack.permission.role(settings, workspace, user), slug = settings.github_app_slug, language = choose(user)))
 
     def show(
         modal: str,
@@ -244,9 +247,12 @@ def register(
         if workspace.repository_name is None: return
 
         directory = pathlib.Path(os.path.join(settings.threadvault_data_directory, threadvault.backup.runner.VAULTS_DIRECTORY, *workspace.repository_name.split('/')))
+        commit, reason = None, None
 
-        try: threadvault.backup.runner.publish(application.client, workspace, directory = directory, full_name = workspace.repository_name, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = settings.threadvault_lookback_days, limit = settings.threadvault_deletions_maximum, now = datetime.datetime.now(datetime.UTC))
-        except (threadvault.backup.runner.VaultError, threadvault.backup.runner.LockError, threadvault.github.rest.GitHubError, threadvault.github.token.TokenError, threadvault.vault.repository.GitError, threadvault.vault.state.StateError, slack_sdk.errors.SlackApiError) as error: _LOGGER.warning('Backup failed: %s', error)
+        try: _, commit = threadvault.backup.runner.publish(application.client, workspace, directory = directory, full_name = workspace.repository_name, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = settings.threadvault_lookback_days, limit = settings.threadvault_deletions_maximum, now = datetime.datetime.now(datetime.UTC))
+        except (threadvault.backup.runner.VaultError, threadvault.backup.runner.LockError, threadvault.github.rest.GitHubError, threadvault.github.token.TokenError, threadvault.vault.repository.GitError, threadvault.vault.state.StateError, slack_sdk.errors.SlackApiError) as error: _LOGGER.warning('Backup failed: %s', error); reason = str(error)
+
+        journal.save(team, threadvault.journal.Run(completion = datetime.datetime.now(datetime.UTC), repository = workspace.repository_name, commit = commit, reason = reason))
 
     def publish(
         event: dict[str, typing.Any],

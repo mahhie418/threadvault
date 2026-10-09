@@ -86,7 +86,7 @@ def run(
 def publish(
     slack: slack_sdk.web.WebClient,
     directory: pathlib.Path
-) -> list[threadvault.backup.runner.Result]:
+) -> tuple[list[threadvault.backup.runner.Result], str]:
 
     return threadvault.backup.runner.publish(slack, SETTINGS, directory = directory, full_name = 'xxx/xxx', token = lambda: 'ghu_xxx', days = 30, limit = None, now = NOW)
 
@@ -297,12 +297,13 @@ def test_runner_vault_publication(
         respx.get(REPOSITORY).mock(side_effect = [httpx.Response(404, json = {'message': 'Not Found'}), *[found] * 9])
         creation = respx.post(f'{threadvault.github.rest.API_URL}/user/repos').respond(201, json = {'clone_url': str(remote), 'full_name': 'xxx/xxx', 'private': True})
         respx.get(f'{threadvault.github.rest.API_URL}/user').respond(200, json = {'id': 1, 'login': 'xxx'})
-        results = publish(slack, directory)
+        results, commit = publish(slack, directory)
         log = git('log', '--format=%s %ae', 'main', directory = remote).splitlines()
         publish(slack, directory)
 
     assert creation.call_count == 1
     assert [result.messages for result in results] == [0, 5]
+    assert commit == git('rev-parse', 'main', directory = remote).strip()
     assert log == ['Back up at 2026-10-05 01:00 UTC 1+xxx@users.noreply.github.com', 'Back up #general 1+xxx@users.noreply.github.com', 'Back up #xxx 1+xxx@users.noreply.github.com', 'xxx xxx@xxx.xxx']
     assert git('log', '--format=%s', 'main', directory = remote).splitlines() == [line.rpartition(' ')[0] for line in log]
     assert git('ls-tree', '-r', '--name-only', 'main', directory = remote).splitlines() == FILES_PUBLISHED

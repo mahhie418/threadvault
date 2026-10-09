@@ -67,6 +67,7 @@ def test_repository_push_commit(
     repository.push()
 
     assert git('log', '--format=%s %an', 'main', directory = remote).splitlines() == ['xxx2 xxx1', 'xxx xxx']
+    assert repository.head() == git('rev-parse', 'main', directory = remote).strip()
 
 def test_repository_push_rebase(
     tmp_path: pathlib.Path,

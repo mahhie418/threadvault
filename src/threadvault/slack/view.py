@@ -5,6 +5,7 @@ import typing
 
 import threadvault.configuration
 import threadvault.github.oauth
+import threadvault.journal
 import threadvault.localisation
 import threadvault.slack.permission
 
@@ -42,12 +43,17 @@ def home(
     github: GitHubState,
     destination: str | None,
     running: bool,
+    last: threadvault.journal.Run | None,
     role: threadvault.slack.permission.Role,
     slug: str,
     language: threadvault.configuration.Language
 ) -> dict[str, typing.Any]:
 
     """Builds the App Home, which shows the state of the backup.
+
+    Everyone sees when the last backup ended and whether it succeeded. The
+    owner and the admins also see the commit that it left in the vault, or
+    why it failed.
 
     While a backup is running, everyone sees so. Otherwise, while GitHub is
     connected and the destination is chosen, the owner and the admins allowed
@@ -68,6 +74,7 @@ def home(
                 connected.
         destination: Repository of the vault, as owner/name, or None while none is chosen.
         running: Whether a backup is running.
+        last: The backup that ended last, or None before the first one ends.
         role: Role of the viewer.
         slug: URL slug of the GitHub App.
         language: Language of the viewer.
@@ -90,6 +97,7 @@ def home(
         fields.append((threadvault.localisation.translate('home.destination', language), f'<https://github.com/{destination}|{destination}>' if destination else threadvault.localisation.translate('home.destination.missing', language)))
         blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate(f'home.role.{role}', language)}]})
 
+    fields.append((threadvault.localisation.translate('home.backup.last', language), _report(last = last, role = role, language = language)))
     blocks.append({'type': 'section', 'fields': [_text(title, text) for title, text in fields]})
 
     if running: blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate('home.backup.running', language)}]})
@@ -371,6 +379,22 @@ def _button(
     confirmation = {'title': _plain(threadvault.localisation.translate('disconnection.title', language)), 'text': _plain(threadvault.localisation.translate('disconnection.text', language)), 'confirm': _plain(threadvault.localisation.translate('disconnection.confirm', language)), 'deny': _plain(threadvault.localisation.translate('disconnection.deny', language)), 'style': 'danger'}
 
     return {'type': 'button', 'action_id': DISCONNECTION_ACTION, 'style': 'danger', 'text': _plain(threadvault.localisation.translate('home.github.disconnection', language)), 'confirm': confirmation}
+
+def _report(
+    *,
+    last: threadvault.journal.Run | None,
+    role: threadvault.slack.permission.Role,
+    language: threadvault.configuration.Language
+) -> str:
+
+    if last is None: return threadvault.localisation.translate('home.backup.missing', language)
+
+    time = f'<!date^{int(last.completion.timestamp())}^{{date_short}} {{time}}|{last.completion:%Y-%m-%d %H:%M} UTC>'
+
+    if last.commit is None: text, detail = threadvault.localisation.translate('home.backup.failure', language, time = time), last.reason
+    else: text, detail = threadvault.localisation.translate('home.backup.success', language, time = time), f'<https://github.com/{last.repository}/commit/{last.commit}|{last.commit[:7]}>'
+
+    return text if role == 'member' else f'{text}\n{detail}'
 
 def _option(
     name: str

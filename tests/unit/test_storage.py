@@ -7,7 +7,7 @@ import pytest
 
 import threadvault.storage
 
-TABLES = {'slack', 'github'}
+TABLES = {'slack', 'github', 'backup'}
 INSERT = "INSERT INTO slack VALUES ('xxx', 'xxx', 'xxx', 'xxx')"
 
 @pytest.fixture

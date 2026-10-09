@@ -150,6 +150,21 @@ class Repository:
 
         self._git('push', 'origin', 'HEAD')
 
+    def head(
+        self
+    ) -> str:
+
+        """Gives the commit that the working tree is at.
+
+        Returns:
+            The full ID of the commit.
+
+        Raises:
+            GitError: git failed.
+        """
+
+        return self._git('rev-parse', 'HEAD').strip()
+
     def _git(
         self,
         *arguments: str,

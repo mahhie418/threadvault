@@ -106,7 +106,7 @@ def _backup_now(
             manager = threadvault.github.token.TokenManager(database, cipher, settings.github_app_client_id)
             directory = pathlib.Path(os.path.join(settings.threadvault_data_directory, threadvault.backup.runner.VAULTS_DIRECTORY, *repository.split('/')))
 
-            try: results = threadvault.backup.runner.publish(client, workspace, directory = directory, full_name = repository, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = settings.threadvault_lookback_days, limit = settings.threadvault_deletions_maximum, now = now)
+            try: results, _ = threadvault.backup.runner.publish(client, workspace, directory = directory, full_name = repository, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = settings.threadvault_lookback_days, limit = settings.threadvault_deletions_maximum, now = now)
             finally: database.close()
 
     except (threadvault.configuration.ConfigurationError, threadvault.customisation.SettingInvalidError, threadvault.encryption.SecretKeyError, threadvault.storage.DatabaseError, threadvault.vault.state.StateError, threadvault.vault.repository.GitError, threadvault.github.token.TokenError, threadvault.github.rest.GitHubError, threadvault.backup.runner.VaultError, threadvault.backup.runner.LockError, slack_sdk.errors.SlackApiError) as error:

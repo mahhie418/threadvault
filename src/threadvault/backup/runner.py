@@ -171,7 +171,7 @@ def publish(
     days: int,
     limit: int | None,
     now: datetime.datetime
-) -> list[Result]:
+) -> tuple[list[Result], str]:
 
     """Backs up the workspace into its vault on GitHub.
 
@@ -199,7 +199,8 @@ def publish(
         now: The current time.
 
     Returns:
-        What the run did to each channel, in the order of conversations.list.
+        What the run did to each channel, in the order of conversations.list,
+        and the full ID of the commit that the vault is at after the backup.
 
     Raises:
         LockError: Another backup is already writing the clone.
@@ -236,7 +237,7 @@ def publish(
 
         _push(repository, f'Back up at {now:%Y-%m-%d %H:%M} UTC', token, full_name)
 
-        return results
+        return results, repository.head()
 
 @contextlib.contextmanager
 def hold(

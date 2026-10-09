@@ -32,6 +32,18 @@ _MIGRATIONS: tuple[tuple[str, ...], ...] = (
         ) STRICT
         """,
     ),
+    (
+        """
+        CREATE TABLE backup (
+            run_id INTEGER PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
+            finish_time TEXT NOT NULL,
+            repository_name TEXT NOT NULL,
+            commit_id TEXT,
+            error_message TEXT
+        ) STRICT
+        """,
+    ),
 )
 
 class DatabaseError(Exception):
