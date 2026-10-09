@@ -61,6 +61,7 @@
   "notice.creation": "<@{user}> created {repository} as the destination.",
   "notice.destination": "<@{user}> set the destination to {repository}.",
   "notice.disconnection": "<@{user}> disconnected GitHub.",
+  "notice.failure": "A backup failed: {message}",
   "notice.grant": "<@{owner}> allowed you to operate {product}.",
   "notice.grant.done": "You allowed <@{user}> to operate {product}.",
   "notice.ownership": "<@{owner}> transferred the ownership of {product} to you.",

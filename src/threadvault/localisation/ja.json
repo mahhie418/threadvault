@@ -61,6 +61,7 @@
   "notice.creation": "<@{user}> さんが {repository} を作り、保存先にしました。",
   "notice.destination": "<@{user}> さんが保存先を {repository} にしました。",
   "notice.disconnection": "<@{user}> さんが GitHub との連携を解除しました。",
+  "notice.failure": "バックアップが失敗しました: {message}",
   "notice.grant": "<@{owner}> さんが、あなたに {product} の操作を許可しました。",
   "notice.grant.done": "<@{user}> さんに {product} の操作を許可しました。",
   "notice.ownership": "<@{owner}> さんが、{product} のオーナーをあなたに譲りました。",

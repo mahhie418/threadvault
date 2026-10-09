@@ -653,6 +653,7 @@ def test_handler_backup_start(
     assert runs == [('xxx/xxx', 'xxx/xxx', ('vaults', 'xxx', 'xxx'), 'ghu_xxx', 30, None, datetime.UTC)]
     assert last == threadvault.journal.Run(completion = unittest.mock.ANY, repository = 'xxx/xxx', commit = 'xxx', reason = None)
     assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'connected', destination = 'xxx/xxx', running = running, last = run, role = 'owner', slug = 'xxx', language = 'ja')} for running, run in ((True, None), (False, last))]
+    assert calls(workspace, 'chat.postMessage') == []
 
 @pytest.mark.parametrize('error', ERRORS_BACKUP)
 def test_handler_backup_failure(
@@ -674,6 +675,7 @@ def test_handler_backup_failure(
     assert 'Backup failed: xxx' in caplog.text
     assert last == threadvault.journal.Run(completion = unittest.mock.ANY, repository = 'xxx/xxx', commit = None, reason = 'xxx')
     assert [arguments['view'] for arguments in calls(workspace, 'views.publish')] == [threadvault.slack.view.home(github = 'disconnected', destination = 'xxx/xxx', running = running, last = run, role = 'owner', slug = 'xxx', language = 'ja') for running, run in ((True, None), (False, last))]
+    assert calls(workspace, 'chat.postMessage') == [{'channel': admin, 'text': threadvault.localisation.translate('notice.failure', 'ja', message = 'xxx')} for admin in ('UXXX1', 'UXXX2')]
 
 def test_handler_backup_absence(
     monkeypatch: pytest.MonkeyPatch,

@@ -54,7 +54,8 @@ def register(
     chosen or created. A backup started from the App Home runs in the
     background, one at a time, as `threadvault.worker.Worker` makes sure, and
     the App Home of whoever started it shows the backup while it runs. Every
-    App Home shows how the last backup ended.
+    App Home shows how the last backup ended, and the owner and every admin
+    hear by direct message when a backup fails.
 
     Args:
         application: The application.
@@ -130,11 +131,10 @@ def register(
     def notify(
         team: str,
         key: str,
-        user: str,
         **values: str
     ) -> None:
 
-        for recipient in sorted(threadvault.slack.permission.admins(settings, store.load(team))): tell(recipient, key, user = user, **values)
+        for recipient in sorted(threadvault.slack.permission.admins(settings, store.load(team))): tell(recipient, key, **values)
 
     def link(
         team: str,
@@ -157,7 +157,7 @@ def register(
 
         refresh(team, user)
         show(modal, threadvault.slack.view.respond(error = None, language = language))
-        notify(team, 'notice.connection', user)
+        notify(team, 'notice.connection', user = user)
 
     def index() -> None:
 
@@ -192,7 +192,7 @@ def register(
         store.save(team, dataclasses.replace(store.load(team), repository_name = repository), update_user = user)
         refresh(team, user)
         show(modal, threadvault.slack.view.settle(repository = repository, outcome = 'success', language = language))
-        notify(team, 'notice.destination', user, repository = repository)
+        notify(team, 'notice.destination', user = user, repository = repository)
 
     def gather(
         modal: str,
@@ -233,7 +233,7 @@ def register(
         store.save(team, dataclasses.replace(store.load(team), repository_name = repository), update_user = user)
         refresh(team, user)
         show(modal, threadvault.slack.view.establish(repository = repository, outcome = 'success', language = language))
-        notify(team, 'notice.creation', user, repository = repository)
+        notify(team, 'notice.creation', user = user, repository = repository)
 
     def perform(
         team: str,
@@ -253,6 +253,8 @@ def register(
         except (threadvault.backup.runner.VaultError, threadvault.backup.runner.LockError, threadvault.github.rest.GitHubError, threadvault.github.token.TokenError, threadvault.vault.repository.GitError, threadvault.vault.state.StateError, slack_sdk.errors.SlackApiError) as error: _LOGGER.warning('Backup failed: %s', error); reason = str(error)
 
         journal.save(team, threadvault.journal.Run(completion = datetime.datetime.now(datetime.UTC), repository = workspace.repository_name, commit = commit, reason = reason))
+
+        if reason is not None: notify(team, 'notice.failure', message = reason)
 
     def publish(
         event: dict[str, typing.Any],
@@ -291,7 +293,7 @@ def register(
 
         manager.delete()
         refresh(context.team_id, context.user_id)
-        notify(context.team_id, 'notice.disconnection', context.user_id)
+        notify(context.team_id, 'notice.disconnection', user = context.user_id)
 
     def offer(
         ack: slack_bolt.Ack,
