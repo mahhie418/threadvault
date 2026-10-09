@@ -71,7 +71,7 @@ def run(
     vault: pathlib.Path,
     settings: threadvault.customisation.Settings,
     *,
-    days: int,
+    days: int | None,
     limit: int | None,
     now: datetime.datetime,
     checkpoint: collections.abc.Callable[[Result], None] | None = None
@@ -81,8 +81,9 @@ def run(
 
     The run backs up the channels that the bot is a member of, only the
     selected ones in 'selected' mode. A channel that the vault does not hold
-    yet is fetched in full, and nothing is deleted from it. Any other channel
-    is fetched for the last `days` days and merged into what the vault holds.
+    yet, and every channel when `days` is None, is fetched in full, and
+    nothing is deleted from it. Any other channel is fetched for the last
+    `days` days and merged into what the vault holds.
     A renamed channel first moves to the directory of its new name. The vault
     then gets the users and the channels, the messages of each channel as
     Slack's export writes them, the Markdown of each channel and its index,
@@ -97,7 +98,7 @@ def run(
         client: Slack client for the workspace.
         vault: Root directory of the vault, created when missing.
         settings: Settings of the workspace.
-        days: Number of recent days to fetch again.
+        days: Number of recent days to fetch again, or None to fetch every channel in full.
         limit: Most messages that the run may delete, or None for no limit.
         now: The current time.
         checkpoint: Function called with the result of each channel fetched in full,
@@ -131,13 +132,13 @@ def run(
 
     for channel in targets:
 
-        known = channel['id'] in previous
+        recent = days is not None and channel['id'] in previous
         directory = directories[channel['id']]
         stored = _read(pathlib.Path(os.path.join(raw, directory)))
-        oldest, latest = threadvault.backup.fetch.window(now, days if known else None)
+        oldest, latest = threadvault.backup.fetch.window(now, days if recent else None)
         history = threadvault.slack.api.history(client, channel['id'], oldest = oldest, latest = latest)
         threads = {thread_ts: threadvault.slack.api.replies(client, channel['id'], thread_ts) for thread_ts in threadvault.backup.fetch.threads(history, stored)}
-        outcome = threadvault.vault.merge.merge(stored, history, threads, oldest = oldest, latest = latest, now = now, limit = limit if known else 0)
+        outcome = threadvault.vault.merge.merge(stored, history, threads, oldest = oldest, latest = latest, now = now, limit = limit if recent else 0)
         saved, failed = _download(client, vault, itertools.chain(history, *threads.values()), settings.attachment_size_maximum * 1024 * 1024) if settings.attachments_enabled else (0, 0)
         paths = {file['id']: threadvault.vault.files.locate(file) for file in threadvault.vault.files.select(outcome.messages)}
         attachments = {file_id: path for file_id, path in paths.items() if pathlib.Path(os.path.join(vault, path)).is_file()}
@@ -149,7 +150,7 @@ def run(
 
         results.append(Result(channel = channel['id'], directory = directory, messages = len(outcome.messages), deleted = len(outcome.deleted), withheld = len(outcome.withheld), files = saved, failures = failed))
 
-        if known: continue
+        if recent: continue
 
         progress[channel['id']] = directory
         threadvault.vault.state.save(vault, progress)
@@ -168,7 +169,7 @@ def publish(
     directory: pathlib.Path,
     full_name: str,
     token: collections.abc.Callable[[], str],
-    days: int,
+    days: int | None,
     limit: int | None,
     now: datetime.datetime
 ) -> tuple[list[Result], str]:
@@ -194,7 +195,7 @@ def publish(
         directory: Directory for the clone of the vault.
         full_name: Repository of the vault, as owner/name.
         token: Function that gives a current GitHub access token.
-        days: Number of recent days to fetch again.
+        days: Number of recent days to fetch again, or None to fetch every channel in full.
         limit: Most messages that the run may delete, or None for no limit.
         now: The current time.
 

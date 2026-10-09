@@ -55,7 +55,8 @@ def register(
     background, one at a time, as `threadvault.worker.Worker` makes sure, and
     the App Home of whoever started it shows the backup while it runs. Every
     App Home shows how the last backup ended, and the owner and every admin
-    hear by direct message when a backup fails.
+    hear by direct message when a backup fails. A resynchronisation is a
+    backup that fetches every channel in full and deletes nothing.
 
     Args:
         application: The application.
@@ -237,7 +238,8 @@ def register(
 
     def perform(
         team: str,
-        user: str
+        user: str,
+        days: int | None
     ) -> None:
 
         refresh(team, user)
@@ -249,7 +251,7 @@ def register(
         directory = pathlib.Path(os.path.join(settings.threadvault_data_directory, threadvault.backup.runner.VAULTS_DIRECTORY, *workspace.repository_name.split('/')))
         commit, reason = None, None
 
-        try: _, commit = threadvault.backup.runner.publish(application.client, workspace, directory = directory, full_name = workspace.repository_name, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = settings.threadvault_lookback_days, limit = settings.threadvault_deletions_maximum, now = datetime.datetime.now(datetime.UTC))
+        try: _, commit = threadvault.backup.runner.publish(application.client, workspace, directory = directory, full_name = workspace.repository_name, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = days, limit = settings.threadvault_deletions_maximum, now = datetime.datetime.now(datetime.UTC))
         except (threadvault.backup.runner.VaultError, threadvault.backup.runner.LockError, threadvault.github.rest.GitHubError, threadvault.github.token.TokenError, threadvault.vault.repository.GitError, threadvault.vault.state.StateError, slack_sdk.errors.SlackApiError) as error: _LOGGER.warning('Backup failed: %s', error); reason = str(error)
 
         journal.save(team, threadvault.journal.Run(completion = datetime.datetime.now(datetime.UTC), repository = workspace.repository_name, commit = commit, reason = reason))
@@ -376,7 +378,20 @@ def register(
 
         if team is None or user is None: return
 
-        if not worker.start(lambda: perform(team, user), lambda: refresh(team, user)): refresh(team, user)
+        if not worker.start(lambda: perform(team, user, settings.threadvault_lookback_days), lambda: refresh(team, user)): refresh(team, user)
+
+    def resynchronise(
+        ack: slack_bolt.Ack,
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        ack()
+
+        team, user = context.team_id, context.user_id
+
+        if team is None or user is None: return
+
+        if not worker.start(lambda: perform(team, user, None), lambda: refresh(team, user)): refresh(team, user)
 
     def manage(
         ack: slack_bolt.Ack,
@@ -501,6 +516,7 @@ def register(
     application.action(threadvault.slack.view.CREATION_ACTION)(propose)
     application.view(threadvault.slack.view.CREATION_CALLBACK)(create)
     application.action(threadvault.slack.view.BACKUP_ACTION)(launch)
+    application.action(threadvault.slack.view.RESYNCHRONISATION_ACTION)(resynchronise)
     application.action(threadvault.slack.view.PERMISSIONS_ACTION, middleware = guard)(manage)
     application.view(threadvault.slack.view.PERMISSIONS_CALLBACK, middleware = guard)(review)
     application.view(threadvault.slack.view.PERMISSIONS_CONFIRMATION, middleware = guard)(apply)

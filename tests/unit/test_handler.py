@@ -61,6 +61,16 @@ CONNECTIONS_EXPIRED = [
     (TOKENS_SAVED, httpx.Response(401, json = {'message': 'Bad credentials'}))
 ]
 
+ACTIONS_STARTED = [
+    (threadvault.slack.view.BACKUP_ACTION, 30),
+    (threadvault.slack.view.RESYNCHRONISATION_ACTION, None)
+]
+
+ACTIONS_REFUSED = [
+    threadvault.slack.view.BACKUP_ACTION,
+    threadvault.slack.view.RESYNCHRONISATION_ACTION
+]
+
 ERRORS_BACKUP = [
     threadvault.backup.runner.VaultError('xxx'),
     threadvault.backup.runner.LockError('xxx')
@@ -612,12 +622,15 @@ def test_handler_creation_failure(
     assert calls(workspace, 'views.update') == [{'view_id': 'VXXX', 'view': threadvault.slack.view.establish(repository = f'xxx/{name}', outcome = 'failure', language = 'ja', message = message)}]
     assert calls(workspace, 'chat.postMessage') == []
 
+@pytest.mark.parametrize(('action', 'days'), ACTIONS_STARTED)
 def test_handler_backup_start(
     monkeypatch: pytest.MonkeyPatch,
     application: slack_bolt.App,
     workspace: dict[str, typing.Any],
     database: threadvault.storage.Database,
-    manager: threadvault.github.token.TokenManager
+    manager: threadvault.github.token.TokenManager,
+    action: str,
+    days: int | None
 ) -> None:
 
     runs = []
@@ -629,7 +642,7 @@ def test_handler_backup_start(
         directory: pathlib.Path,
         full_name: str,
         token: collections.abc.Callable[[], str],
-        days: int,
+        days: int | None,
         limit: int | None,
         now: datetime.datetime
     ) -> tuple[list[threadvault.backup.runner.Result], str]:
@@ -646,11 +659,11 @@ def test_handler_backup_start(
 
         respx.get(f'{threadvault.github.rest.API_URL}/user/installations').respond(200, json = INSTALLATIONS_RESPONDED)
 
-        assert press(application, 'UXXX1', threadvault.slack.view.BACKUP_ACTION).status == 200
+        assert press(application, 'UXXX1', action).status == 200
 
     last = threadvault.journal.RunIO(database).load('TXXX')
 
-    assert runs == [('xxx/xxx', 'xxx/xxx', ('vaults', 'xxx', 'xxx'), 'ghu_xxx', 30, None, datetime.UTC)]
+    assert runs == [('xxx/xxx', 'xxx/xxx', ('vaults', 'xxx', 'xxx'), 'ghu_xxx', days, None, datetime.UTC)]
     assert last == threadvault.journal.Run(completion = unittest.mock.ANY, repository = 'xxx/xxx', commit = 'xxx', reason = None)
     assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'connected', destination = 'xxx/xxx', running = running, last = run, role = 'owner', slug = 'xxx', language = 'ja')} for running, run in ((True, None), (False, last))]
     assert calls(workspace, 'chat.postMessage') == []
@@ -691,11 +704,13 @@ def test_handler_backup_absence(
     assert not publish.called
     assert [arguments['view'] for arguments in calls(workspace, 'views.publish')] == [threadvault.slack.view.home(github = 'disconnected', destination = None, running = running, last = None, role = 'owner', slug = 'xxx', language = 'ja') for running in (True, False)]
 
+@pytest.mark.parametrize('action', ACTIONS_REFUSED)
 def test_handler_backup_exclusivity(
     monkeypatch: pytest.MonkeyPatch,
     application: slack_bolt.App,
     workspace: dict[str, typing.Any],
-    database: threadvault.storage.Database
+    database: threadvault.storage.Database,
+    action: str
 ) -> None:
 
     def busy(
@@ -717,7 +732,7 @@ def test_handler_backup_exclusivity(
     monkeypatch.setattr(threadvault.worker.Worker, 'start', start)
     threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = 'xxx/xxx'), update_user = 'UXXX1')
 
-    assert press(application, 'UXXX1', threadvault.slack.view.BACKUP_ACTION).status == 200
+    assert press(application, 'UXXX1', action).status == 200
     assert not publish.called
     assert [arguments['view'] for arguments in calls(workspace, 'views.publish')] == [threadvault.slack.view.home(github = 'disconnected', destination = 'xxx/xxx', running = True, last = None, role = 'owner', slug = 'xxx', language = 'ja')]
 

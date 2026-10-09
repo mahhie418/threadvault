@@ -282,6 +282,23 @@ def test_runner_vault_checkpoint(
 
     assert states == [{'CXXX2': 'xxx'}, {'CXXX1': 'general', 'CXXX2': 'xxx'}]
 
+def test_runner_vault_resynchronisation(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    directories = []
+
+    run(slack, tmp_path)
+
+    workspace['messages']['CXXX1'] = [message for message in workspace['messages']['CXXX1'] if message['ts'] not in MESSAGES_DELETION]
+
+    results = threadvault.backup.runner.run(slack, tmp_path, SETTINGS, days = None, limit = None, now = NOW, checkpoint = lambda result: directories.append(result.directory))
+
+    assert directories == ['xxx', 'general']
+    assert [(result.messages, result.deleted, result.withheld) for result in results] == [(0, 0, 0), (5, 0, 1)]
+
 def test_runner_vault_publication(
     tmp_path: pathlib.Path,
     remote: pathlib.Path,

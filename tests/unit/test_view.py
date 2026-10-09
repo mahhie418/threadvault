@@ -52,8 +52,8 @@ VIEWERS_INSTALLATION = [
 ]
 
 VIEWERS_BACKUP = [
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'owner'}, [(threadvault.slack.view.BACKUP_ACTION, 'Back up now')], ['You are the owner.']),
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'operator'}, [(threadvault.slack.view.BACKUP_ACTION, 'Back up now')], ['You are an admin with permission to operate the app.']),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'owner'}, [(threadvault.slack.view.BACKUP_ACTION, 'Back up now', False), (threadvault.slack.view.RESYNCHRONISATION_ACTION, 'Resynchronise everything', True)], ['You are the owner.']),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'operator'}, [(threadvault.slack.view.BACKUP_ACTION, 'Back up now', False), (threadvault.slack.view.RESYNCHRONISATION_ACTION, 'Resynchronise everything', True)], ['You are an admin with permission to operate the app.']),
     ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'admin'}, [], ['You are an admin without permission to operate the app.']),
     ({'github': 'connected', 'destination': 'xxx/xxx', 'running': True, 'role': 'owner'}, [], ['You are the owner.', 'Backing up the workspace…']),
     ({'github': 'connected', 'destination': 'xxx/xxx', 'running': True, 'role': 'member'}, [], ['Backing up the workspace…']),
@@ -137,13 +137,13 @@ def test_view_home_connection(
 @pytest.mark.parametrize(('state', 'buttons', 'notes'), VIEWERS_BACKUP)
 def test_view_home_backup(
     state: dict[str, typing.Any],
-    buttons: list[tuple[str, str]],
+    buttons: list[tuple[str, str, bool]],
     notes: list[str]
 ) -> None:
 
     view = threadvault.slack.view.home(**state, last = None, slug = 'xxx', language = 'en')
 
-    assert [(element['action_id'], element['text']['text']) for block in view['blocks'] if block['type'] == 'actions' for element in block['elements'] if element['action_id'] == threadvault.slack.view.BACKUP_ACTION] == buttons
+    assert [(element['action_id'], element['text']['text'], 'confirm' in element) for block in view['blocks'] if block['type'] == 'actions' for element in block['elements'] if element['action_id'] in (threadvault.slack.view.BACKUP_ACTION, threadvault.slack.view.RESYNCHRONISATION_ACTION)] == buttons
     assert [element['text'] for block in view['blocks'] if block['type'] == 'context' for element in block['elements']] == notes
 
 @pytest.mark.parametrize(('state', 'texts'), VIEWERS_INSTALLATION)

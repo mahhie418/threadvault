@@ -14,6 +14,7 @@ type DestinationOutcome = typing.Literal['check', 'success', 'absence', 'publici
 type CreationOutcome = typing.Literal['check', 'success', 'failure']
 
 BACKUP_ACTION = 'backup_action'
+RESYNCHRONISATION_ACTION = 'resynchronisation_action'
 CONNECTION_ACTION = 'connection_action'
 DISCONNECTION_ACTION = 'disconnection_action'
 DESTINATION_ACTION = 'destination_action'
@@ -57,7 +58,8 @@ def home(
 
     While a backup is running, everyone sees so. Otherwise, while GitHub is
     connected and the destination is chosen, the owner and the admins allowed
-    to operate the app see a button that backs up the workspace at once.
+    to operate the app see a button that backs up the workspace at once, and
+    one that resynchronises the whole workspace once they confirm it.
 
     The owner and the admins also see the destination and their own role.
     The owner and the admins allowed to operate the app see a button that
@@ -101,7 +103,7 @@ def home(
     blocks.append({'type': 'section', 'fields': [_text(title, text) for title, text in fields]})
 
     if running: blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate('home.backup.running', language)}]})
-    elif role in ('owner', 'operator') and github == 'connected' and destination: blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': BACKUP_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.backup', language))}]})
+    elif role in ('owner', 'operator') and github == 'connected' and destination: blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': BACKUP_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.backup', language))}, {'type': 'button', 'action_id': RESYNCHRONISATION_ACTION, 'text': _plain(threadvault.localisation.translate('home.resynchronisation', language)), 'confirm': _confirmation('resynchronisation', 'primary', language)}]})
 
     buttons = [_button(github = github, language = language)]
 
@@ -376,9 +378,15 @@ def _button(
     if github == 'disconnected': return {'type': 'button', 'action_id': CONNECTION_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.github.connection', language))}
     if github == 'expired': return {'type': 'button', 'action_id': CONNECTION_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.github.reconnection', language))}
 
-    confirmation = {'title': _plain(threadvault.localisation.translate('disconnection.title', language)), 'text': _plain(threadvault.localisation.translate('disconnection.text', language)), 'confirm': _plain(threadvault.localisation.translate('disconnection.confirm', language)), 'deny': _plain(threadvault.localisation.translate('disconnection.deny', language)), 'style': 'danger'}
+    return {'type': 'button', 'action_id': DISCONNECTION_ACTION, 'style': 'danger', 'text': _plain(threadvault.localisation.translate('home.github.disconnection', language)), 'confirm': _confirmation('disconnection', 'danger', language)}
 
-    return {'type': 'button', 'action_id': DISCONNECTION_ACTION, 'style': 'danger', 'text': _plain(threadvault.localisation.translate('home.github.disconnection', language)), 'confirm': confirmation}
+def _confirmation(
+    key: str,
+    style: str,
+    language: threadvault.configuration.Language
+) -> dict[str, typing.Any]:
+
+    return {'title': _plain(threadvault.localisation.translate(f'{key}.title', language)), 'text': _plain(threadvault.localisation.translate(f'{key}.text', language)), 'confirm': _plain(threadvault.localisation.translate(f'{key}.confirm', language)), 'deny': _plain(threadvault.localisation.translate(f'{key}.deny', language)), 'style': style}
 
 def _report(
     *,
