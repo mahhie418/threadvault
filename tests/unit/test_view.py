@@ -4,6 +4,7 @@ import typing
 
 import pytest
 
+import threadvault.customisation
 import threadvault.github.oauth
 import threadvault.journal
 import threadvault.slack.permission
@@ -31,15 +32,15 @@ ROLES_MESSAGE = [
 ]
 
 VIEWERS_MESSAGE = [
-    ({'github': 'connected', 'role': 'owner'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', False), (threadvault.slack.view.CREATION_ACTION, 'Create repository', False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Admin permissions', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', False)]),
-    ({'github': 'connected', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', False), (threadvault.slack.view.CREATION_ACTION, 'Create repository', False)]),
+    ({'github': 'connected', 'role': 'owner'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', False), (threadvault.slack.view.CREATION_ACTION, 'Create repository', False), (threadvault.slack.view.SETTINGS_ACTION, 'Settings', False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Admin permissions', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', False)]),
+    ({'github': 'connected', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', False), (threadvault.slack.view.CREATION_ACTION, 'Create repository', False), (threadvault.slack.view.SETTINGS_ACTION, 'Settings', False)]),
     ({'github': 'connected', 'role': 'admin'}, []),
-    ({'github': 'disconnected', 'role': 'owner'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Admin permissions', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', False)]),
-    ({'github': 'disconnected', 'role': 'operator'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', False)]),
+    ({'github': 'disconnected', 'role': 'owner'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', False), (threadvault.slack.view.SETTINGS_ACTION, 'Settings', False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Admin permissions', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', False)]),
+    ({'github': 'disconnected', 'role': 'operator'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', False), (threadvault.slack.view.SETTINGS_ACTION, 'Settings', False)]),
     ({'github': 'disconnected', 'role': 'member'}, []),
-    ({'github': 'expired', 'role': 'operator'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Reconnect GitHub', False)]),
+    ({'github': 'expired', 'role': 'operator'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Reconnect GitHub', False), (threadvault.slack.view.SETTINGS_ACTION, 'Settings', False)]),
     ({'github': 'expired', 'role': 'admin'}, []),
-    ({'github': 'uninstalled', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True)])
+    ({'github': 'uninstalled', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.SETTINGS_ACTION, 'Settings', False)])
 ]
 
 VIEWERS_INSTALLATION = [
@@ -102,6 +103,11 @@ ERRORS_MESSAGE = [
     (threadvault.github.oauth.OAuthError('access_denied', 'xxx'), 'The request was declined on GitHub.'),
     (threadvault.github.oauth.OAuthError('expired_token', 'xxx'), 'The code has expired. Close this window and try again.'),
     (threadvault.github.oauth.OAuthError('connection', 'xxx'), 'GitHub could not be connected: xxx')
+]
+
+SETTINGS_STATUS = [
+    (threadvault.customisation.Settings(), [['enabled'], '00:00', 'UTC']),
+    (threadvault.customisation.Settings(schedule_enabled = False, schedule_time = '12:00', workspace_timezone = 'Asia/Tokyo'), [[], '12:00', 'Asia/Tokyo'])
 ]
 
 @pytest.mark.parametrize(('state', 'texts'), STATES_HOME)
@@ -288,3 +294,15 @@ def test_view_transfer_confirmation() -> None:
 
     assert (view['callback_id'], view['private_metadata'], view['close']['text']) == (threadvault.slack.view.TRANSFER_CONFIRMATION, 'UXXX2', 'Back')
     assert [block['text']['text'] for block in view['blocks']] == ['Transfer the ownership to <@UXXX2>? You stay an admin with permission to operate the app.']
+
+@pytest.mark.parametrize(('settings', 'values'), SETTINGS_STATUS)
+def test_view_settings_configuration(
+    settings: threadvault.customisation.Settings,
+    values: list[typing.Any]
+) -> None:
+
+    view = threadvault.slack.view.configure(workspace = settings, language = 'en')
+    elements: dict[str, dict[str, typing.Any]] = {block['block_id']: block['element'] for block in view['blocks']}
+
+    assert view['callback_id'] == threadvault.slack.view.SETTINGS_CALLBACK
+    assert [[option['value'] for option in elements[threadvault.slack.view.SCHEDULE_INPUT].get('initial_options', [])], elements[threadvault.slack.view.TIME_INPUT]['initial_time'], elements[threadvault.slack.view.TIMEZONE_ACTION]['initial_option']['value']] == values

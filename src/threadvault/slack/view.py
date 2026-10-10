@@ -5,6 +5,7 @@ import json
 import typing
 
 import threadvault.configuration
+import threadvault.customisation
 import threadvault.github.oauth
 import threadvault.journal
 import threadvault.localisation
@@ -29,11 +30,16 @@ REPOSITORY_ACTION = 'repository_action'
 TRANSFER_ACTION = 'transfer_action'
 TRANSFER_CALLBACK = 'transfer_callback'
 TRANSFER_CONFIRMATION = 'transfer_confirmation'
+SETTINGS_ACTION = 'settings_action'
+SETTINGS_CALLBACK = 'settings_callback'
+TIMEZONE_ACTION = 'timezone_action'
 
 ACCOUNT_INPUT = 'account_input'
 ADMINS_INPUT = 'admins_input'
 SUCCESSOR_INPUT = 'successor_input'
 NAME_INPUT = 'name_input'
+SCHEDULE_INPUT = 'schedule_input'
+TIME_INPUT = 'time_input'
 
 _OPTION_LIMIT = 100
 _DISPLAY_LIMIT = 75
@@ -67,9 +73,10 @@ def home(
     The owner and the admins allowed to operate the app see a button that
     connects GitHub, connects it again once the connection has stopped
     working, or disconnects it, buttons that choose or create the destination
-    while GitHub is connected, and a link to install the GitHub App while it
-    has no installation. The owner also sees buttons that choose the admins
-    allowed to operate the app and that transfer the ownership to an admin.
+    while GitHub is connected, a button that opens the settings, and a link
+    to install the GitHub App while it has no installation. The owner also
+    sees buttons that choose the admins allowed to operate the app and that
+    transfer the ownership to an admin.
 
     Args:
         github: State of the connection to GitHub: disconnected, expired when
@@ -112,6 +119,9 @@ def home(
     buttons = [_button(github = github, language = language)]
 
     if github == 'connected': buttons.extend({'type': 'button', 'action_id': action, 'text': _plain(threadvault.localisation.translate(key, language))} for action, key in ((DESTINATION_ACTION, 'home.destination.choice'), (CREATION_ACTION, 'home.destination.creation')))
+
+    buttons.append({'type': 'button', 'action_id': SETTINGS_ACTION, 'text': _plain(threadvault.localisation.translate('home.settings', language))})
+
     if role in ('owner', 'operator'): blocks.append({'type': 'actions', 'elements': buttons})
     if role in ('owner', 'operator') and github == 'uninstalled': blocks.append({'type': 'section', 'text': _text(threadvault.localisation.translate('home.installation', language), threadvault.localisation.translate('home.installation.missing', language, url = f'https://github.com/apps/{slug}/installations/new'))})
     if role == 'owner': blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': action, 'text': _plain(threadvault.localisation.translate(key, language))} for action, key in ((PERMISSIONS_ACTION, 'home.permissions'), (TRANSFER_ACTION, 'home.transfer'))]})
@@ -194,7 +204,7 @@ def suggest(
     """Builds the options of a menu, as many as Slack takes.
 
     Args:
-        names: Repositories as owner/name, or GitHub accounts.
+        names: Repositories as owner/name, GitHub accounts, or time zones.
 
     Returns:
         The options, as an options response takes them.
@@ -372,6 +382,33 @@ def nominate(
     """
 
     return {'type': 'modal', 'callback_id': TRANSFER_CONFIRMATION, 'private_metadata': successor, 'title': _plain(threadvault.localisation.translate('transfer.title', language)), 'submit': _plain(threadvault.localisation.translate('transfer.confirm', language)), 'close': _plain(threadvault.localisation.translate('transfer.back', language)), 'blocks': [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': threadvault.localisation.translate('transfer.question', language, user = successor)}}]}
+
+def configure(
+    *,
+    workspace: threadvault.customisation.Settings,
+    language: threadvault.configuration.Language
+) -> dict[str, typing.Any]:
+
+    """Builds the modal that changes the settings of the workspace, showing their current values.
+
+    The daily backup runs at its time in its time zone, which the Markdown
+    follows too from the next backup.
+
+    Args:
+        workspace: Settings of the workspace to show.
+        language: Language of the admin.
+
+    Returns:
+        The view, as views.open takes it.
+    """
+
+    blocks = [
+        {'type': 'input', 'block_id': SCHEDULE_INPUT, 'optional': True, 'label': _plain(threadvault.localisation.translate('settings.schedule', language)), 'element': _checkbox(SCHEDULE_INPUT, [{'text': _plain(threadvault.localisation.translate('settings.schedule.enabled', language)), 'value': 'enabled'}], ('enabled',) if workspace.schedule_enabled else ())},
+        {'type': 'input', 'block_id': TIME_INPUT, 'label': _plain(threadvault.localisation.translate('settings.time', language)), 'element': {'type': 'timepicker', 'action_id': TIME_INPUT, 'initial_time': workspace.schedule_time}},
+        {'type': 'input', 'block_id': TIMEZONE_ACTION, 'label': _plain(threadvault.localisation.translate('settings.timezone', language)), 'hint': _plain(threadvault.localisation.translate('settings.timezone.hint', language)), 'element': {'type': 'external_select', 'action_id': TIMEZONE_ACTION, 'min_query_length': 1, 'initial_option': _option(workspace.workspace_timezone)}}
+    ]
+
+    return {'type': 'modal', 'callback_id': SETTINGS_CALLBACK, 'title': _plain(threadvault.localisation.translate('settings.title', language)), 'submit': _plain(threadvault.localisation.translate('settings.submit', language)), 'close': _plain(threadvault.localisation.translate('settings.close', language)), 'blocks': blocks}
 
 def _button(
     *,

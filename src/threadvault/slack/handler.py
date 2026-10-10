@@ -10,6 +10,7 @@ import os
 import pathlib
 import threading
 import typing
+import zoneinfo
 
 import slack_bolt
 import slack_sdk.errors
@@ -60,7 +61,8 @@ def register(
     backup that fetches every channel in full and deletes nothing. Once the
     destination is chosen, the daily backup runs at the time in the settings
     of the workspace, and one missed while the app was stopped runs as soon
-    as the app runs again.
+    as the app runs again. The settings say whether it runs and its time and
+    time zone, which the Markdown follows too.
 
     Args:
         application: The application.
@@ -428,6 +430,56 @@ def register(
 
         if not worker.start(lambda: perform(team, user, None), lambda: refresh(team, user)): refresh(team, user)
 
+    def configure(
+        ack: slack_bolt.Ack,
+        body: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        ack()
+
+        if context.team_id is None or context.user_id is None: return
+
+        workspace = store.load(context.team_id)
+        entry: dict[str, typing.Any] = application.client.users_info(user = context.user_id).get('user', {})
+        zone = workspace.workspace_timezone
+
+        if zone == threadvault.customisation.Settings().workspace_timezone: zone = entry.get('tz') or zone
+
+        application.client.views_open(trigger_id = body['trigger_id'], view = threadvault.slack.view.configure(workspace = dataclasses.replace(workspace, workspace_timezone = zone), language = choose(context.user_id)))
+
+    def search(
+        ack: slack_bolt.Ack,
+        payload: dict[str, typing.Any]
+    ) -> None:
+
+        query: str = payload.get('value', '')
+
+        ack(options = threadvault.slack.view.suggest(sorted(zone for zone in zoneinfo.available_timezones() if query.casefold() in zone.casefold())))
+
+    def adjust(
+        ack: slack_bolt.Ack,
+        view: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        team, user = context.team_id, context.user_id
+
+        if team is None or user is None: return
+
+        values: dict[str, dict[str, dict[str, typing.Any]]] = view['state']['values']
+        elements = {action: element for block in values.values() for action, element in block.items()}
+        previous = store.load(team)
+        workspace = dataclasses.replace(previous, schedule_enabled = bool(elements[threadvault.slack.view.SCHEDULE_INPUT]['selected_options']), schedule_time = elements[threadvault.slack.view.TIME_INPUT]['selected_time'], workspace_timezone = elements[threadvault.slack.view.TIMEZONE_ACTION]['selected_option']['value'])
+
+        store.save(team, workspace, update_user = user)
+
+        if (workspace.schedule_enabled, workspace.schedule_time, workspace.workspace_timezone) != (previous.schedule_enabled, previous.schedule_time, previous.workspace_timezone): calendar.save(team, threadvault.schedule.follow(datetime.datetime.now(datetime.UTC), workspace.schedule_time, workspace.workspace_timezone))
+
+        ack()
+
+        refresh(team, user)
+
     def manage(
         ack: slack_bolt.Ack,
         body: dict[str, typing.Any],
@@ -552,6 +604,9 @@ def register(
     application.view(threadvault.slack.view.CREATION_CALLBACK)(create)
     application.action(threadvault.slack.view.BACKUP_ACTION)(launch)
     application.action(threadvault.slack.view.RESYNCHRONISATION_ACTION)(resynchronise)
+    application.action(threadvault.slack.view.SETTINGS_ACTION)(configure)
+    application.options(threadvault.slack.view.TIMEZONE_ACTION)(search)
+    application.view(threadvault.slack.view.SETTINGS_CALLBACK)(adjust)
     application.action(threadvault.slack.view.PERMISSIONS_ACTION, middleware = guard)(manage)
     application.view(threadvault.slack.view.PERMISSIONS_CALLBACK, middleware = guard)(review)
     application.view(threadvault.slack.view.PERMISSIONS_CONFIRMATION, middleware = guard)(apply)

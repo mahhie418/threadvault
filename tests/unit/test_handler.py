@@ -91,6 +91,17 @@ TIMES_PLANNED = [
     (datetime.datetime(2026, 10, 8, 15, 0, tzinfo = datetime.UTC), 1, datetime.datetime(2026, 10, 10, 3, 0, tzinfo = datetime.UTC))
 ]
 
+TIMEZONES_OFFERED = [
+    ('UTC', 'Asia/Tokyo', 'Asia/Tokyo'),
+    ('Europe/London', 'Asia/Tokyo', 'Europe/London'),
+    ('UTC', None, 'UTC')
+]
+
+SETTINGS_CHANGED = [
+    threadvault.customisation.Settings(repository_name = 'xxx/xxx', schedule_time = '12:00', workspace_timezone = 'Asia/Tokyo'),
+    threadvault.customisation.Settings(repository_name = 'xxx/xxx', schedule_enabled = False)
+]
+
 DESTINATIONS_REFUSED = [
     ('xxx/xxx', httpx.Response(404, json = {'message': 'Not Found'}), 'absence', ''),
     ('xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': False}), 'publicity', ''),
@@ -191,10 +202,11 @@ def submit(
 def suggest(
     application: slack_bolt.App,
     user: str,
+    action: str,
     value: str
 ) -> slack_bolt.BoltResponse:
 
-    return application.dispatch(slack_bolt.BoltRequest(body = {'type': 'block_suggestion', 'team': {'id': 'TXXX'}, 'user': {'id': user}, 'action_id': threadvault.slack.view.REPOSITORY_ACTION, 'block_id': threadvault.slack.view.REPOSITORY_ACTION, 'value': value}, mode = 'socket_mode'))
+    return application.dispatch(slack_bolt.BoltRequest(body = {'type': 'block_suggestion', 'team': {'id': 'TXXX'}, 'user': {'id': user}, 'action_id': action, 'block_id': action, 'value': value}, mode = 'socket_mode'))
 
 def checked(
     users: list[str]
@@ -220,6 +232,12 @@ def named(
 ) -> dict[str, typing.Any]:
 
     return {'callback_id': threadvault.slack.view.CREATION_CALLBACK, 'state': {'values': {threadvault.slack.view.ACCOUNT_INPUT: {threadvault.slack.view.ACCOUNT_INPUT: {'type': 'static_select', 'selected_option': {'text': {'type': 'plain_text', 'text': account}, 'value': account}}}, threadvault.slack.view.NAME_INPUT: {threadvault.slack.view.NAME_INPUT: {'type': 'plain_text_input', 'value': name}}}}}
+
+def configured(
+    settings: threadvault.customisation.Settings
+) -> dict[str, typing.Any]:
+
+    return {'callback_id': threadvault.slack.view.SETTINGS_CALLBACK, 'state': {'values': {threadvault.slack.view.SCHEDULE_INPUT: {threadvault.slack.view.SCHEDULE_INPUT: {'type': 'checkboxes', 'selected_options': [{'value': 'enabled'}] if settings.schedule_enabled else []}}, threadvault.slack.view.TIME_INPUT: {threadvault.slack.view.TIME_INPUT: {'type': 'timepicker', 'selected_time': settings.schedule_time}}, threadvault.slack.view.TIMEZONE_ACTION: {threadvault.slack.view.TIMEZONE_ACTION: {'type': 'external_select', 'selected_option': {'text': {'type': 'plain_text', 'text': settings.workspace_timezone}, 'value': settings.workspace_timezone}}}}}}
 
 def calls(
     workspace: dict[str, typing.Any],
@@ -462,7 +480,7 @@ def test_handler_destination_offer(
 
     threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = 'xxx/xxx1'), update_user = 'UXXX1')
     manager.save(TOKENS_SAVED)
-    options = json.loads(suggest(application, 'UXXX1', '').body)
+    options = json.loads(suggest(application, 'UXXX1', threadvault.slack.view.REPOSITORY_ACTION, '').body)
 
     with respx.mock:
 
@@ -473,7 +491,7 @@ def test_handler_destination_offer(
 
     assert options == {'options': []}
     assert calls(workspace, 'views.open') == [{'trigger_id': 'xxx', 'view': threadvault.slack.view.offer(current = 'xxx/xxx1', language = 'ja')}]
-    assert json.loads(suggest(application, 'UXXX1', 'XXX2').body) == {'options': threadvault.slack.view.suggest(['xxx/xxx2'])}
+    assert json.loads(suggest(application, 'UXXX1', threadvault.slack.view.REPOSITORY_ACTION, 'XXX2').body) == {'options': threadvault.slack.view.suggest(['xxx/xxx2'])}
 
 def test_handler_destination_choice(
     application: slack_bolt.App,
@@ -873,6 +891,56 @@ def test_handler_schedule_exclusivity(
 
     schedule('TXXX', TIME_CHECKED)
 
+    assert threadvault.schedule.ScheduleIO(database).load('TXXX') == TIME_CHECKED
+
+@pytest.mark.parametrize(('saved', 'own', 'shown'), TIMEZONES_OFFERED)
+def test_handler_settings_offer(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database,
+    saved: str,
+    own: str | None,
+    shown: str
+) -> None:
+
+    next(entry for entry in workspace['users'] if entry['id'] == 'UXXX1')['tz'] = own
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(workspace_timezone = saved), update_user = 'UXXX1')
+
+    assert press(application, 'UXXX1', threadvault.slack.view.SETTINGS_ACTION).status == 200
+    assert calls(workspace, 'views.open') == [{'trigger_id': 'xxx', 'view': threadvault.slack.view.configure(workspace = threadvault.customisation.Settings(workspace_timezone = shown), language = 'ja')}]
+
+def test_handler_settings_search(
+    application: slack_bolt.App
+) -> None:
+
+    assert json.loads(suggest(application, 'UXXX1', threadvault.slack.view.TIMEZONE_ACTION, 'tokyo').body) == {'options': threadvault.slack.view.suggest(['Asia/Tokyo'])}
+
+@pytest.mark.parametrize('settings', SETTINGS_CHANGED)
+def test_handler_settings_change(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any],
+    database: threadvault.storage.Database,
+    settings: threadvault.customisation.Settings
+) -> None:
+
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = 'xxx/xxx'), update_user = 'UXXX1')
+    threadvault.schedule.ScheduleIO(database).save('TXXX', TIME_CHECKED)
+
+    planned = threadvault.schedule.follow(datetime.datetime.now(datetime.UTC), settings.schedule_time, settings.workspace_timezone)
+
+    assert submit(application, 'UXXX1', configured(settings)).body == ''
+    assert threadvault.customisation.SettingsIO(database).load('TXXX') == settings
+    assert threadvault.schedule.ScheduleIO(database).load('TXXX') == planned
+    assert [arguments['user_id'] for arguments in calls(workspace, 'views.publish')] == ['UXXX1']
+
+def test_handler_settings_retention(
+    application: slack_bolt.App,
+    database: threadvault.storage.Database
+) -> None:
+
+    threadvault.schedule.ScheduleIO(database).save('TXXX', TIME_CHECKED)
+
+    assert submit(application, 'UXXX1', configured(threadvault.customisation.Settings())).body == ''
     assert threadvault.schedule.ScheduleIO(database).load('TXXX') == TIME_CHECKED
 
 def test_handler_permission_grant(
