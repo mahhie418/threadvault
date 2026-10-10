@@ -42,6 +42,8 @@ SCHEDULE_INPUT = 'schedule_input'
 TIME_INPUT = 'time_input'
 MODE_INPUT = 'mode_input'
 CHANNELS_INPUT = 'channels_input'
+ATTACHMENTS_INPUT = 'attachments_input'
+SIZE_INPUT = 'size_input'
 
 _OPTION_LIMIT = 100
 _DISPLAY_LIMIT = 75
@@ -395,7 +397,8 @@ def configure(
 
     The daily backup runs at its time in its time zone, which the Markdown
     follows too from the next backup. Backups cover every channel that the
-    bot is in, or only the chosen ones among them.
+    bot is in, or only the chosen ones among them, and save the attached
+    files up to a size, or none.
 
     Args:
         workspace: Settings of the workspace to show.
@@ -415,7 +418,9 @@ def configure(
         {'type': 'input', 'block_id': TIME_INPUT, 'label': _plain(threadvault.localisation.translate('settings.time', language)), 'element': {'type': 'timepicker', 'action_id': TIME_INPUT, 'initial_time': workspace.schedule_time}},
         {'type': 'input', 'block_id': TIMEZONE_ACTION, 'label': _plain(threadvault.localisation.translate('settings.timezone', language)), 'hint': _plain(threadvault.localisation.translate('settings.timezone.hint', language)), 'element': {'type': 'external_select', 'action_id': TIMEZONE_ACTION, 'min_query_length': 1, 'initial_option': _option(workspace.workspace_timezone)}},
         {'type': 'input', 'block_id': MODE_INPUT, 'label': _plain(threadvault.localisation.translate('settings.mode', language)), 'element': {'type': 'radio_buttons', 'action_id': MODE_INPUT, 'options': list(modes.values()), 'initial_option': modes[workspace.channel_mode]}},
-        {'type': 'input', 'block_id': CHANNELS_INPUT, 'optional': True, 'label': _plain(threadvault.localisation.translate('settings.channels', language)), 'hint': _plain(threadvault.localisation.translate('settings.channels.hint', language)), 'element': channels}
+        {'type': 'input', 'block_id': CHANNELS_INPUT, 'optional': True, 'label': _plain(threadvault.localisation.translate('settings.channels', language)), 'hint': _plain(threadvault.localisation.translate('settings.channels.hint', language)), 'element': channels},
+        {'type': 'input', 'block_id': ATTACHMENTS_INPUT, 'optional': True, 'label': _plain(threadvault.localisation.translate('settings.attachments', language)), 'element': _checkbox(ATTACHMENTS_INPUT, [{'text': _plain(threadvault.localisation.translate('settings.attachments.enabled', language)), 'value': 'enabled'}], ('enabled',) if workspace.attachments_enabled else ())},
+        {'type': 'input', 'block_id': SIZE_INPUT, 'label': _plain(threadvault.localisation.translate('settings.size', language)), 'hint': _plain(threadvault.localisation.translate('settings.size.hint', language, maximum = str(threadvault.customisation.ATTACHMENT_SIZE_MAXIMUM))), 'element': {'type': 'number_input', 'action_id': SIZE_INPUT, 'is_decimal_allowed': False, 'min_value': '1', 'max_value': str(threadvault.customisation.ATTACHMENT_SIZE_MAXIMUM), 'initial_value': str(workspace.attachment_size_maximum)}}
     ]
 
     return {'type': 'modal', 'callback_id': SETTINGS_CALLBACK, 'title': _plain(threadvault.localisation.translate('settings.title', language)), 'submit': _plain(threadvault.localisation.translate('settings.submit', language)), 'close': _plain(threadvault.localisation.translate('settings.close', language)), 'blocks': blocks}
