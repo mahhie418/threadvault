@@ -41,7 +41,7 @@ class Slack(slack_sdk.web.WebClient):
 
         match api_method:
 
-            case 'auth.test': data = {'url': self.workspace['url']}
+            case 'auth.test': data = {'team_id': 'TXXX', 'url': self.workspace['url']}
             case 'users.list': data = page('members', self.workspace['users'], arguments)
             case 'conversations.list': data = page('channels', [channel for channel in self.workspace['channels'] if ('private_channel' if channel['is_private'] else 'public_channel') in types.split(',')], arguments)
             case 'conversations.members': data = page('members', self.workspace['members'][arguments['channel']], arguments)

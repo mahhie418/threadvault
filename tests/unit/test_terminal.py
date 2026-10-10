@@ -12,6 +12,7 @@ import slack_bolt
 import slack_sdk
 
 import threadvault.backup.runner
+import threadvault.customisation
 import threadvault.encryption
 import threadvault.github.oauth
 import threadvault.github.rest
@@ -98,6 +99,32 @@ def test_terminal_command_backup_now(
 
     with holder(directory): assert threadvault.terminal.main(['backup-now', *arguments]) == status
     assert capsys.readouterr() == (out, err.format(directory = directory))
+
+def test_terminal_command_backup_configuration(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    def connect(
+        _: str
+    ) -> slack_sdk.web.WebClient:
+
+        return slack
+
+    database = threadvault.storage.Database(pathlib.Path(os.path.join(tmp_path, threadvault.storage.DATABASE_FILE)))
+
+    try: threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(channel_mode = 'selected', channels_selected = ('CXXX1',)), update_user = 'UXXX1')
+    finally: database.close()
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('SLACK_BOT_TOKEN', 'xoxb-xxx')
+    monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
+    monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+
+    assert threadvault.terminal.main(['backup-now', '--out', 'xxx']) == 0
+    assert capsys.readouterr() == ('general: 5 messages, 0 deleted, 0 withheld, 0 files, 0 failures\n', '')
 
 @pytest.mark.parametrize(('client', 'status', 'out', 'err', 'tokens'), CLIENTS_LOGIN)
 def test_terminal_command_github_login(
