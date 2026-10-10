@@ -106,8 +106,8 @@ ERRORS_MESSAGE = [
 ]
 
 SETTINGS_STATUS = [
-    (threadvault.customisation.Settings(), [['enabled'], '00:00', 'UTC']),
-    (threadvault.customisation.Settings(schedule_enabled = False, schedule_time = '12:00', workspace_timezone = 'Asia/Tokyo'), [[], '12:00', 'Asia/Tokyo'])
+    (threadvault.customisation.Settings(), [['enabled'], '00:00', 'UTC', 'joined', []]),
+    (threadvault.customisation.Settings(schedule_enabled = False, schedule_time = '12:00', workspace_timezone = 'Asia/Tokyo', channel_mode = 'selected', channels_selected = ('CXXX1', 'CXXX2')), [[], '12:00', 'Asia/Tokyo', 'selected', ['CXXX1', 'CXXX2']])
 ]
 
 @pytest.mark.parametrize(('state', 'texts'), STATES_HOME)
@@ -305,4 +305,4 @@ def test_view_settings_configuration(
     elements: dict[str, dict[str, typing.Any]] = {block['block_id']: block['element'] for block in view['blocks']}
 
     assert view['callback_id'] == threadvault.slack.view.SETTINGS_CALLBACK
-    assert [[option['value'] for option in elements[threadvault.slack.view.SCHEDULE_INPUT].get('initial_options', [])], elements[threadvault.slack.view.TIME_INPUT]['initial_time'], elements[threadvault.slack.view.TIMEZONE_ACTION]['initial_option']['value']] == values
+    assert [[option['value'] for option in elements[threadvault.slack.view.SCHEDULE_INPUT].get('initial_options', [])], elements[threadvault.slack.view.TIME_INPUT]['initial_time'], elements[threadvault.slack.view.TIMEZONE_ACTION]['initial_option']['value'], elements[threadvault.slack.view.MODE_INPUT]['initial_option']['value'], elements[threadvault.slack.view.CHANNELS_INPUT].get('initial_conversations', [])] == values

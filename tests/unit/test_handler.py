@@ -237,7 +237,7 @@ def configured(
     settings: threadvault.customisation.Settings
 ) -> dict[str, typing.Any]:
 
-    return {'callback_id': threadvault.slack.view.SETTINGS_CALLBACK, 'state': {'values': {threadvault.slack.view.SCHEDULE_INPUT: {threadvault.slack.view.SCHEDULE_INPUT: {'type': 'checkboxes', 'selected_options': [{'value': 'enabled'}] if settings.schedule_enabled else []}}, threadvault.slack.view.TIME_INPUT: {threadvault.slack.view.TIME_INPUT: {'type': 'timepicker', 'selected_time': settings.schedule_time}}, threadvault.slack.view.TIMEZONE_ACTION: {threadvault.slack.view.TIMEZONE_ACTION: {'type': 'external_select', 'selected_option': {'text': {'type': 'plain_text', 'text': settings.workspace_timezone}, 'value': settings.workspace_timezone}}}}}}
+    return {'callback_id': threadvault.slack.view.SETTINGS_CALLBACK, 'state': {'values': {threadvault.slack.view.SCHEDULE_INPUT: {threadvault.slack.view.SCHEDULE_INPUT: {'type': 'checkboxes', 'selected_options': [{'value': 'enabled'}] if settings.schedule_enabled else []}}, threadvault.slack.view.TIME_INPUT: {threadvault.slack.view.TIME_INPUT: {'type': 'timepicker', 'selected_time': settings.schedule_time}}, threadvault.slack.view.TIMEZONE_ACTION: {threadvault.slack.view.TIMEZONE_ACTION: {'type': 'external_select', 'selected_option': {'text': {'type': 'plain_text', 'text': settings.workspace_timezone}, 'value': settings.workspace_timezone}}}, threadvault.slack.view.MODE_INPUT: {threadvault.slack.view.MODE_INPUT: {'type': 'radio_buttons', 'selected_option': {'value': settings.channel_mode}}}, threadvault.slack.view.CHANNELS_INPUT: {threadvault.slack.view.CHANNELS_INPUT: {'type': 'multi_conversations_select', 'selected_conversations': list(settings.channels_selected)}}}}}
 
 def calls(
     workspace: dict[str, typing.Any],
@@ -942,6 +942,24 @@ def test_handler_settings_retention(
 
     assert submit(application, 'UXXX1', configured(threadvault.customisation.Settings())).body == ''
     assert threadvault.schedule.ScheduleIO(database).load('TXXX') == TIME_CHECKED
+
+def test_handler_settings_channel(
+    application: slack_bolt.App,
+    database: threadvault.storage.Database
+) -> None:
+
+    assert submit(application, 'UXXX1', configured(threadvault.customisation.Settings(channel_mode = 'selected', channels_selected = ('CXXX2', 'CXXX1')))).body == ''
+    assert threadvault.customisation.SettingsIO(database).load('TXXX') == threadvault.customisation.Settings(channel_mode = 'selected', channels_selected = ('CXXX1', 'CXXX2'))
+
+def test_handler_settings_absence(
+    application: slack_bolt.App,
+    database: threadvault.storage.Database
+) -> None:
+
+    response = submit(application, 'UXXX1', configured(threadvault.customisation.Settings(channel_mode = 'selected')))
+
+    assert json.loads(response.body) == {'response_action': 'errors', 'errors': {threadvault.slack.view.CHANNELS_INPUT: threadvault.localisation.translate('settings.channels.missing', 'ja')}}
+    assert threadvault.customisation.SettingsIO(database).load('TXXX') == threadvault.customisation.Settings()
 
 def test_handler_permission_grant(
     application: slack_bolt.App,
