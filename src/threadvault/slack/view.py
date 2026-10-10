@@ -44,6 +44,7 @@ MODE_INPUT = 'mode_input'
 CHANNELS_INPUT = 'channels_input'
 ATTACHMENTS_INPUT = 'attachments_input'
 SIZE_INPUT = 'size_input'
+LANGUAGE_INPUT = 'language_input'
 
 _OPTION_LIMIT = 100
 _DISPLAY_LIMIT = 75
@@ -398,7 +399,8 @@ def configure(
     The daily backup runs at its time in its time zone, which the Markdown
     follows too from the next backup. Backups cover every channel that the
     bot is in, or only the chosen ones among them, and save the attached
-    files up to a size, or none.
+    files up to a size, or none. The Markdown follows the chosen language
+    too from the next backup.
 
     Args:
         workspace: Settings of the workspace to show.
@@ -413,6 +415,8 @@ def configure(
 
     if workspace.channels_selected: channels['initial_conversations'] = list(workspace.channels_selected)
 
+    languages = {code: {'text': _plain(threadvault.localisation.translate(f'settings.language.{code}', language)), 'value': code} for code in ('en', 'ja')}
+
     blocks = [
         {'type': 'input', 'block_id': SCHEDULE_INPUT, 'optional': True, 'label': _plain(threadvault.localisation.translate('settings.schedule', language)), 'element': _checkbox(SCHEDULE_INPUT, [{'text': _plain(threadvault.localisation.translate('settings.schedule.enabled', language)), 'value': 'enabled'}], ('enabled',) if workspace.schedule_enabled else ())},
         {'type': 'input', 'block_id': TIME_INPUT, 'label': _plain(threadvault.localisation.translate('settings.time', language)), 'element': {'type': 'timepicker', 'action_id': TIME_INPUT, 'initial_time': workspace.schedule_time}},
@@ -420,7 +424,8 @@ def configure(
         {'type': 'input', 'block_id': MODE_INPUT, 'label': _plain(threadvault.localisation.translate('settings.mode', language)), 'element': {'type': 'radio_buttons', 'action_id': MODE_INPUT, 'options': list(modes.values()), 'initial_option': modes[workspace.channel_mode]}},
         {'type': 'input', 'block_id': CHANNELS_INPUT, 'optional': True, 'label': _plain(threadvault.localisation.translate('settings.channels', language)), 'hint': _plain(threadvault.localisation.translate('settings.channels.hint', language)), 'element': channels},
         {'type': 'input', 'block_id': ATTACHMENTS_INPUT, 'optional': True, 'label': _plain(threadvault.localisation.translate('settings.attachments', language)), 'element': _checkbox(ATTACHMENTS_INPUT, [{'text': _plain(threadvault.localisation.translate('settings.attachments.enabled', language)), 'value': 'enabled'}], ('enabled',) if workspace.attachments_enabled else ())},
-        {'type': 'input', 'block_id': SIZE_INPUT, 'label': _plain(threadvault.localisation.translate('settings.size', language)), 'hint': _plain(threadvault.localisation.translate('settings.size.hint', language, maximum = str(threadvault.customisation.ATTACHMENT_SIZE_MAXIMUM))), 'element': {'type': 'number_input', 'action_id': SIZE_INPUT, 'is_decimal_allowed': False, 'min_value': '1', 'max_value': str(threadvault.customisation.ATTACHMENT_SIZE_MAXIMUM), 'initial_value': str(workspace.attachment_size_maximum)}}
+        {'type': 'input', 'block_id': SIZE_INPUT, 'label': _plain(threadvault.localisation.translate('settings.size', language)), 'hint': _plain(threadvault.localisation.translate('settings.size.hint', language, maximum = str(threadvault.customisation.ATTACHMENT_SIZE_MAXIMUM))), 'element': {'type': 'number_input', 'action_id': SIZE_INPUT, 'is_decimal_allowed': False, 'min_value': '1', 'max_value': str(threadvault.customisation.ATTACHMENT_SIZE_MAXIMUM), 'initial_value': str(workspace.attachment_size_maximum)}},
+        {'type': 'input', 'block_id': LANGUAGE_INPUT, 'label': _plain(threadvault.localisation.translate('settings.language', language)), 'hint': _plain(threadvault.localisation.translate('settings.language.hint', language)), 'element': {'type': 'radio_buttons', 'action_id': LANGUAGE_INPUT, 'options': list(languages.values()), 'initial_option': languages[workspace.markdown_language]}}
     ]
 
     return {'type': 'modal', 'callback_id': SETTINGS_CALLBACK, 'title': _plain(threadvault.localisation.translate('settings.title', language)), 'submit': _plain(threadvault.localisation.translate('settings.submit', language)), 'close': _plain(threadvault.localisation.translate('settings.close', language)), 'blocks': blocks}
