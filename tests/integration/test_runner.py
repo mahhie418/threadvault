@@ -32,8 +32,10 @@ THREAD_INSERTION = [
 ]
 
 REPLY_THREAD = {'parent_user_id': 'UXXX1', 'text': 'xxx', 'thread_ts': '1510963199.000000', 'ts': '1791158400.000000', 'type': 'message', 'user': 'UXXX2'}
+MESSAGE_DAY = {'text': 'xxx', 'ts': '1787184000.000000', 'type': 'message', 'user': 'UXXX1'}
 
 BACKLOG_THREAD = threadvault.backup.backlog.Backlog(threads = {'CXXX1': frozenset({'1510963199.000000', '1791158400.000001'})})
+BACKLOG_DAY = threadvault.backup.backlog.Backlog(days = {'CXXX1': frozenset({datetime.date(2017, 11, 17), datetime.date(2026, 8, 20)})})
 
 ATTACHMENT_CONTENT = [
     {'created': 1791158400, 'id': 'FXXX1', 'mimetype': 'text/plain', 'mode': 'hosted', 'name': 'xxx.txt', 'permalink': 'https://xxx.slack.com/files/UXXX1/FXXX1/xxx.txt', 'size': 3, 'url_private_download': 'https://files.slack.com/xxx1'},
@@ -247,6 +249,31 @@ def test_runner_vault_backlog(
 
     assert [message['ts'] for message in read(directory, 'general', '2026-10-05.json')] == ['1791158400.000000']
     assert results[1].messages == 6
+
+def test_runner_vault_revision(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    workspace['messages']['CXXX1'] += [MESSAGE_DAY]
+
+    run(slack, tmp_path)
+
+    messages = workspace['messages']['CXXX1']
+    next(message for message in messages if message['ts'] == '1510880400.000000')['text'] = 'xxx2'
+    workspace['messages']['CXXX1'] = [message for message in messages if message['ts'] != MESSAGE_DAY['ts']]
+
+    run(slack, tmp_path)
+
+    assert [(message['ts'], message['text']) for message in read(tmp_path, 'general', '2017-11-17.json')] == [('1510880400.000000', 'xxx'), ('1510963199.000000', 'xxx')]
+    assert [message['ts'] for message in read(tmp_path, 'general', '2026-08-20.json')] == [MESSAGE_DAY['ts']]
+
+    results = run(slack, tmp_path, backlog = BACKLOG_DAY)
+
+    assert [(message['ts'], message['text']) for message in read(tmp_path, 'general', '2017-11-17.json')] == [('1510880400.000000', 'xxx2'), ('1510963199.000000', 'xxx')]
+    assert not pathlib.Path(os.path.join(tmp_path, 'raw', 'general', '2026-08-20.json')).exists()
+    assert (results[1].messages, results[1].deleted) == (5, 1)
 
 def test_runner_vault_attachment(
     tmp_path: pathlib.Path,

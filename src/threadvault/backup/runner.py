@@ -98,6 +98,8 @@ def run(
 
     The threads that events marked are fetched again whatever their age, as
     a reply to a thread older than `days` changes no message in the history.
+    So is each marked day older than `days`, as an edit or a deletion there
+    is not in the history either.
 
     Args:
         client: Slack client for the workspace.
@@ -143,9 +145,10 @@ def run(
         directory = directories[channel['id']]
         stored = _read(pathlib.Path(os.path.join(raw, directory)))
         oldest, latest = threadvault.backup.fetch.window(now, days if recent else None)
-        history = threadvault.slack.api.history(client, channel['id'], oldest = oldest, latest = latest)
+        windows = [(oldest, latest), *threadvault.backup.fetch.days(marked.days.get(channel['id'], ()), oldest)]
+        history = [message for start, end in windows for message in threadvault.slack.api.history(client, channel['id'], oldest = start, latest = end)]
         threads = {thread_ts: threadvault.slack.api.replies(client, channel['id'], thread_ts) for thread_ts in threadvault.backup.fetch.threads(history, stored, marked.threads.get(channel['id'], ()))}
-        outcome = threadvault.vault.merge.merge(stored, history, threads, oldest = oldest, latest = latest, now = now, limit = limit if recent else 0)
+        outcome = threadvault.vault.merge.merge(stored, history, threads, windows = windows, now = now, limit = limit if recent else 0)
         saved, failed = _download(client, vault, itertools.chain(history, *threads.values()), settings.attachment_size_maximum * 1024 * 1024) if settings.attachments_enabled else (0, 0)
         paths = {file['id']: threadvault.vault.files.locate(file) for file in threadvault.vault.files.select(outcome.messages)}
         attachments = {file_id: path for file_id, path in paths.items() if pathlib.Path(os.path.join(vault, path)).is_file()}

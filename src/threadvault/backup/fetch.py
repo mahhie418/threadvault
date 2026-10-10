@@ -54,6 +54,29 @@ def threads(
 
     return sorted({*(message['ts'] for message in history if _summarise(message) != _summarise(parents.get(message['ts'], {}))), *marked}, key = decimal.Decimal)
 
+def days(
+    marked: collections.abc.Iterable[datetime.date],
+    oldest: str
+) -> list[tuple[str, str]]:
+
+    """Gives the windows of the marked days that start before the window of the history.
+
+    A day that starts at `oldest` or later is in the history anyway.
+
+    Args:
+        marked: Days, in UTC, that events marked.
+        oldest: Timestamp of the oldest message that the history covers.
+
+    Returns:
+        The timestamps of the start of each day and of the start of the next
+        one, written as Slack writes the timestamps of messages, in order of time.
+    """
+
+    starts = sorted(datetime.datetime.combine(day, datetime.time(), datetime.UTC) for day in marked)
+    windows = [(f'{start.timestamp():.6f}', f'{(start + datetime.timedelta(days = 1)).timestamp():.6f}') for start in starts]
+
+    return [window for window in windows if decimal.Decimal(window[0]) < decimal.Decimal(oldest)]
+
 def _summarise(
     message: collections.abc.Mapping[str, typing.Any]
 ) -> tuple[int, str | None]:

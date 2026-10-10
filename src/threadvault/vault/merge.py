@@ -30,8 +30,7 @@ def merge(
     history: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],
     threads: collections.abc.Mapping[str, collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]]],
     *,
-    oldest: str,
-    latest: str,
+    windows: collections.abc.Collection[tuple[str, str]],
     now: datetime.datetime,
     limit: int | None
 ) -> Outcome:
@@ -39,7 +38,7 @@ def merge(
     """Merges messages fetched from Slack into the messages of a channel.
 
     Each result from Slack is the whole truth only about what it covers. The
-    history covers the messages posted from `oldest` to `latest` that are not
+    history covers the messages posted within each of `windows` that are not
     thread replies; the replies of a thread cover that thread. A stored
     message that a result covers but does not contain was deleted in Slack,
     unless it is older than `DELETION_DAYS_MAXIMUM` days. Every other stored
@@ -51,8 +50,7 @@ def merge(
         stored: Messages that the vault holds for the channel.
         history: Messages that conversations.history returned.
         threads: Messages that conversations.replies returned, by thread timestamp.
-        oldest: Timestamp of the oldest message that the history covers.
-        latest: Timestamp of the latest message that the history covers.
+        windows: Timestamps of the oldest and the latest message of each span of time that the history covers.
         now: The current time, which sets the age of the messages.
         limit: Most deletions to make, or None for no limit.
                0 keeps every message, as the first run needs.
@@ -62,14 +60,14 @@ def merge(
     """
 
     fetched = {message['ts']: dict(message) for message in itertools.chain(history, *threads.values())}
-    window = (decimal.Decimal(oldest), decimal.Decimal(latest))
+    bounds = [(decimal.Decimal(oldest), decimal.Decimal(latest)) for oldest, latest in windows]
     deletable = decimal.Decimal((now - datetime.timedelta(days = DELETION_DAYS_MAXIMUM)).timestamp())
     unknown: dict[str, dict[str, typing.Any]] = {}
     deleted: list[dict[str, typing.Any]] = []
 
     for message in stored:
 
-        if not (covered := _cover(message, threads, window) and decimal.Decimal(message['ts']) >= deletable): unknown[message['ts']] = dict(message)
+        if not (covered := _cover(message, threads, bounds) and decimal.Decimal(message['ts']) >= deletable): unknown[message['ts']] = dict(message)
         if covered and message['ts'] not in fetched: deleted.append(dict(message))
 
     deleted.sort(key = lambda message: decimal.Decimal(message['ts']))
@@ -81,9 +79,9 @@ def merge(
 def _cover(
     message: collections.abc.Mapping[str, typing.Any],
     threads: collections.abc.Mapping[str, object],
-    window: tuple[decimal.Decimal, decimal.Decimal]
+    bounds: collections.abc.Iterable[tuple[decimal.Decimal, decimal.Decimal]]
 ) -> bool:
 
     if (thread_ts := message.get('thread_ts', message['ts'])) in threads: return True
 
-    return thread_ts == message['ts'] and window[0] <= decimal.Decimal(message['ts']) <= window[1]
+    return thread_ts == message['ts'] and any(oldest <= decimal.Decimal(message['ts']) <= latest for oldest, latest in bounds)

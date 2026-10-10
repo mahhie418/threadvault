@@ -63,6 +63,17 @@ _MIGRATIONS: tuple[tuple[str, ...], ...] = (
         ) STRICT
         """,
     ),
+    (
+        """
+        CREATE TABLE day (
+            workspace_id TEXT NOT NULL,
+            channel_id TEXT NOT NULL,
+            message_date TEXT NOT NULL,
+            mark_time TEXT NOT NULL,
+            PRIMARY KEY (workspace_id, channel_id, message_date)
+        ) STRICT
+        """,
+    ),
 )
 
 class DatabaseError(Exception):

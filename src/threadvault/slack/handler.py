@@ -69,7 +69,9 @@ def register(
 
     A reply to a thread marks the thread, and the next backup fetches the
     marked threads again, so that it does not miss a reply to a thread older
-    than the days that it fetches. The marks go once the backup succeeds.
+    than the days that it fetches. An edited or deleted message marks its
+    thread, or its day when it is not a reply, for the same reason. The
+    marks go once the backup succeeds.
 
     Args:
         application: The application.
@@ -319,11 +321,18 @@ def register(
         context: slack_bolt.BoltContext
     ) -> None:
 
-        team, thread_ts = context.team_id, event.get('thread_ts')
+        if (team := context.team_id) is None: return
 
-        if team is None or thread_ts is None or thread_ts == event['ts']: return
+        match event.get('subtype'):
 
-        backlog.mark(team, event['channel'], thread_ts, datetime.datetime.now(datetime.UTC))
+            case 'message_changed': message, edited = event['message'], True
+            case 'message_deleted': message, edited = event.get('previous_message', {'ts': event['deleted_ts']}), True
+            case _: message, edited = event, False
+
+        thread_ts, now = message.get('thread_ts', message['ts']), datetime.datetime.now(datetime.UTC)
+
+        if thread_ts != message['ts']: backlog.mark(team, event['channel'], thread_ts, now)
+        elif edited: backlog.mark(team, event['channel'], datetime.datetime.fromtimestamp(float(message['ts']), datetime.UTC).date(), now)
 
     def connect(
         ack: slack_bolt.Ack,

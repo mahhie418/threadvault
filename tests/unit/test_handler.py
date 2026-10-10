@@ -44,6 +44,7 @@ REPOSITORIES_RESPONDED = {'total_count': 2, 'repositories': [{'full_name': 'xxx/
 INSTALLATIONS_RESPONDED = {'total_count': 1, 'installations': [{'id': 1}]}
 
 BACKLOG_THREAD = threadvault.backup.backlog.Backlog(threads = {'CXXX1': frozenset({'1510963199.000000'})})
+BACKLOG_DAY = threadvault.backup.backlog.Backlog(days = {'CXXX1': frozenset({datetime.date(2017, 11, 17)})})
 
 TABS_OPENED = [('home', 1), ('messages', 0)]
 VIEWERS_HOME = [('UXXX1', 'owner'), ('UXXX2', 'admin'), ('UXXX3', 'member')]
@@ -84,7 +85,11 @@ MESSAGES_MARKED = [
     ({'ts': '1791072000.000000', 'thread_ts': '1510963199.000000'}, BACKLOG_THREAD),
     ({'ts': '1791072000.000000', 'thread_ts': '1510963199.000000', 'subtype': 'thread_broadcast'}, BACKLOG_THREAD),
     ({'ts': '1791072000.000000'}, threadvault.backup.backlog.Backlog()),
-    ({'ts': '1510963199.000000', 'thread_ts': '1510963199.000000'}, threadvault.backup.backlog.Backlog())
+    ({'ts': '1510963199.000000', 'thread_ts': '1510963199.000000'}, threadvault.backup.backlog.Backlog()),
+    ({'ts': '1791158400.000000', 'subtype': 'message_changed', 'message': {'ts': '1791072000.000000', 'thread_ts': '1510963199.000000'}}, BACKLOG_THREAD),
+    ({'ts': '1791158400.000000', 'subtype': 'message_changed', 'message': {'ts': '1510963199.000000', 'thread_ts': '1510963199.000000'}}, BACKLOG_DAY),
+    ({'ts': '1791158400.000000', 'subtype': 'message_deleted', 'deleted_ts': '1791072000.000000', 'previous_message': {'ts': '1791072000.000000', 'thread_ts': '1510963199.000000'}}, BACKLOG_THREAD),
+    ({'ts': '1791158400.000000', 'subtype': 'message_deleted', 'deleted_ts': '1510880400.000000'}, BACKLOG_DAY)
 ]
 
 TIME_CHECKED = datetime.datetime(2026, 10, 9, 15, 0, tzinfo = datetime.UTC)
