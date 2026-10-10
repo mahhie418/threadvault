@@ -114,7 +114,7 @@ def run(
     raw = pathlib.Path(os.path.join(vault, threadvault.vault.export.RAW_DIRECTORY))
     transcripts = pathlib.Path(os.path.join(vault, threadvault.vault.markdown.TRANSCRIPTS_DIRECTORY))
     progress = {channel: directory for channel, directory in directories.items() if channel in previous}
-    results: list[Result] = []
+    results = []
 
     _move((raw, transcripts), previous, directories)
 

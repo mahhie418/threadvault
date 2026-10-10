@@ -37,7 +37,7 @@ class Slack(slack_sdk.web.WebClient):
         calls.append((api_method, arguments))
         types: str = arguments.get('types', 'public_channel')
         conversations: dict[str, list[dict[str, typing.Any]]] = self.workspace['messages']
-        messages: list[dict[str, typing.Any]] = sorted(conversations.get(arguments.get('channel', ''), []), key = lambda message: decimal.Decimal(message['ts']))
+        messages = sorted(conversations.get(arguments.get('channel', ''), []), key = lambda message: decimal.Decimal(message['ts']))
 
         match api_method:
 

@@ -282,11 +282,7 @@ def permit(
     for index in range(0, len(admins), _CHECKBOX_LIMIT):
 
         group = admins[index:index + _CHECKBOX_LIMIT]
-        element: dict[str, typing.Any] = {'type': 'checkboxes', 'action_id': ADMINS_INPUT, 'options': [_choice(admin) for admin in group]}
-
-        if (chosen := [_choice(admin) for admin in group if admin in allowed]): element['initial_options'] = chosen
-
-        blocks.append({'type': 'input', 'block_id': f'{ADMINS_INPUT}{index // _CHECKBOX_LIMIT}', 'optional': True, 'label': _plain(threadvault.localisation.translate('permissions.label', language)), 'element': element})
+        blocks.append({'type': 'input', 'block_id': f'{ADMINS_INPUT}{index // _CHECKBOX_LIMIT}', 'optional': True, 'label': _plain(threadvault.localisation.translate('permissions.label', language)), 'element': _checkbox(ADMINS_INPUT, [_choice(admin) for admin in group], allowed)})
 
     return {'type': 'modal', 'callback_id': PERMISSIONS_CALLBACK, 'title': _plain(title), 'submit': _plain(threadvault.localisation.translate('permissions.submit', language)), 'close': _plain(threadvault.localisation.translate('permissions.close', language)), 'blocks': blocks}
 
@@ -377,6 +373,18 @@ def _choice(
 ) -> dict[str, typing.Any]:
 
     return {'text': {'type': 'mrkdwn', 'text': f'<@{user}>'}, 'value': user}
+
+def _checkbox(
+    action: str,
+    options: list[dict[str, typing.Any]],
+    values: tuple[str, ...]
+) -> dict[str, typing.Any]:
+
+    element = {'type': 'checkboxes', 'action_id': action, 'options': options}
+
+    if (chosen := [option for option in options if option['value'] in values]): element['initial_options'] = chosen
+
+    return element
 
 def _text(
     title: str,

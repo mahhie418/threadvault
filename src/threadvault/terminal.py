@@ -83,18 +83,19 @@ def _backup_now(
 ) -> int:
 
     now = datetime.datetime.now(datetime.UTC)
+    repository: str | None = namespace.repo
 
     try:
 
         settings = threadvault.configuration.load()
 
-        if namespace.repo is None: settings.require('slack_bot_token')
+        if repository is None: settings.require('slack_bot_token')
         else: settings.require('slack_bot_token', 'github_app_client_id')
 
-        workspace = threadvault.customisation.Settings(repository_name = namespace.repo)
+        workspace = threadvault.customisation.Settings(repository_name = repository)
         client = threadvault.slack.api.connect(settings.slack_bot_token)
 
-        if namespace.repo is None:
+        if repository is None:
 
             results = threadvault.backup.runner.run(client, namespace.out, workspace, days = settings.threadvault_lookback_days, limit = settings.threadvault_deletions_maximum, now = now)
 
@@ -103,9 +104,9 @@ def _backup_now(
             cipher = threadvault.encryption.SecretCipher(threadvault.encryption.load(settings.threadvault_secret_key, settings.threadvault_data_directory))
             database = threadvault.storage.Database(pathlib.Path(os.path.join(settings.threadvault_data_directory, threadvault.storage.DATABASE_FILE)))
             manager = threadvault.github.token.TokenManager(database, cipher, settings.github_app_client_id)
-            directory = pathlib.Path(os.path.join(settings.threadvault_data_directory, 'vaults', *namespace.repo.split('/')))
+            directory = pathlib.Path(os.path.join(settings.threadvault_data_directory, 'vaults', *repository.split('/')))
 
-            try: results = threadvault.backup.runner.publish(client, workspace, directory = directory, full_name = namespace.repo, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = settings.threadvault_lookback_days, limit = settings.threadvault_deletions_maximum, now = now)
+            try: results = threadvault.backup.runner.publish(client, workspace, directory = directory, full_name = repository, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = settings.threadvault_lookback_days, limit = settings.threadvault_deletions_maximum, now = now)
             finally: database.close()
 
     except (threadvault.configuration.ConfigurationError, threadvault.customisation.SettingInvalidError, threadvault.encryption.SecretKeyError, threadvault.storage.DatabaseError, threadvault.vault.state.StateError, threadvault.vault.repository.GitError, threadvault.github.token.TokenError, threadvault.github.rest.GitHubError, threadvault.backup.runner.VaultError, slack_sdk.errors.SlackApiError) as error:

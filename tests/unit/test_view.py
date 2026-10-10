@@ -59,15 +59,15 @@ OUTCOMES_DESTINATION = [
     ('failure', 'xxx', 'The repository could not be checked: xxx')
 ]
 
-ACCOUNTS_CREATION = [
-    (None, ['Listing the accounts that have the GitHub App…']),
-    ([], ['The GitHub App is not installed on any account yet. Install it first.'])
-]
-
 OUTCOMES_CREATION = [
     ('check', '', 'Creating xxx/xxx…'),
     ('success', '', 'Created xxx/xxx. Backups now go there.'),
     ('failure', 'xxx', 'The repository could not be created: xxx')
+]
+
+ACCOUNTS_CREATION = [
+    (None, ['Listing the accounts that have the GitHub App…']),
+    ([], ['The GitHub App is not installed on any account yet. Install it first.'])
 ]
 
 ADMINS_ALLOWED = [
