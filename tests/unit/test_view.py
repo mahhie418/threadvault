@@ -12,14 +12,15 @@ import threadvault.slack.view
 CODE = threadvault.github.oauth.Code(device_code = 'xxx', user_code = 'XXXX-XXXX', verification_uri = 'https://github.com/login/device', interval = 5)
 RUN_SUCCEEDED = threadvault.journal.Run(completion = datetime.datetime(2026, 10, 8, 15, 0, tzinfo = datetime.UTC), repository = 'xxx/xxx1', commit = '0123456789abcdef0123456789abcdef01234567', reason = None)
 RUN_FAILED = threadvault.journal.Run(completion = datetime.datetime(2026, 10, 8, 15, 0, tzinfo = datetime.UTC), repository = 'xxx/xxx1', commit = None, reason = 'xxx')
+TIME_PLANNED = datetime.datetime(2026, 10, 9, 15, 0, tzinfo = datetime.UTC)
 
 STATES_HOME = [
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_SUCCEEDED, 'role': 'owner', 'language': 'ja'}, ['*GitHub*\n連携済み', '*保存先*\n<https://github.com/xxx/xxx|xxx/xxx>', '*前回のバックアップ*\n<!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC> に成功しました\n<https://github.com/xxx/xxx1/commit/0123456789abcdef0123456789abcdef01234567|0123456>']),
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_SUCCEEDED, 'role': 'member', 'language': 'en'}, ['*GitHub*\nConnected', '*Last backup*\nSucceeded at <!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC>']),
-    ({'github': 'disconnected', 'destination': None, 'last': None, 'role': 'admin', 'language': 'en'}, ['*GitHub*\nNot connected', '*Destination*\nNot chosen', '*Last backup*\nNone yet']),
-    ({'github': 'expired', 'destination': None, 'last': RUN_FAILED, 'role': 'admin', 'language': 'en'}, ['*GitHub*\nNeeds reconnecting', '*Destination*\nNot chosen', '*Last backup*\nFailed at <!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC>\nxxx']),
-    ({'github': 'uninstalled', 'destination': None, 'last': None, 'role': 'admin', 'language': 'en'}, ['*GitHub*\nConnected', '*Destination*\nNot chosen', '*Last backup*\nNone yet']),
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_FAILED, 'role': 'member', 'language': 'ja'}, ['*GitHub*\n連携済み', '*前回のバックアップ*\n<!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC> に失敗しました'])
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_SUCCEEDED, 'planned': TIME_PLANNED, 'role': 'owner', 'language': 'ja'}, ['*GitHub*\n連携済み', '*保存先*\n<https://github.com/xxx/xxx|xxx/xxx>', '*前回のバックアップ*\n<!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC> に成功しました\n<https://github.com/xxx/xxx1/commit/0123456789abcdef0123456789abcdef01234567|0123456>', '*次回のバックアップ*\n<!date^1791558000^{date_short} {time}|2026-10-09 15:00 UTC>']),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_SUCCEEDED, 'planned': TIME_PLANNED, 'role': 'member', 'language': 'en'}, ['*GitHub*\nConnected', '*Last backup*\nSucceeded at <!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC>', '*Next backup*\n<!date^1791558000^{date_short} {time}|2026-10-09 15:00 UTC>']),
+    ({'github': 'disconnected', 'destination': None, 'last': None, 'planned': None, 'role': 'admin', 'language': 'en'}, ['*GitHub*\nNot connected', '*Destination*\nNot chosen', '*Last backup*\nNone yet', '*Next backup*\nNot scheduled']),
+    ({'github': 'expired', 'destination': None, 'last': RUN_FAILED, 'planned': None, 'role': 'admin', 'language': 'en'}, ['*GitHub*\nNeeds reconnecting', '*Destination*\nNot chosen', '*Last backup*\nFailed at <!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC>\nxxx', '*Next backup*\nNot scheduled']),
+    ({'github': 'uninstalled', 'destination': None, 'last': None, 'planned': None, 'role': 'admin', 'language': 'en'}, ['*GitHub*\nConnected', '*Destination*\nNot chosen', '*Last backup*\nNone yet', '*Next backup*\nNot scheduled']),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_FAILED, 'planned': None, 'role': 'member', 'language': 'ja'}, ['*GitHub*\n連携済み', '*前回のバックアップ*\n<!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC> に失敗しました', '*次回のバックアップ*\n予定なし'])
 ]
 
 ROLES_MESSAGE = [
@@ -120,7 +121,7 @@ def test_view_home_role(
     texts: list[str]
 ) -> None:
 
-    view = threadvault.slack.view.home(github = 'disconnected', destination = None, running = False, last = None, role = role, slug = 'xxx', language = 'en')
+    view = threadvault.slack.view.home(github = 'disconnected', destination = None, running = False, last = None, planned = None, role = role, slug = 'xxx', language = 'en')
 
     assert [element['text'] for block in view['blocks'] if block['type'] == 'context' for element in block['elements']] == texts
 
@@ -130,7 +131,7 @@ def test_view_home_connection(
     buttons: list[tuple[str, str, bool]]
 ) -> None:
 
-    view = threadvault.slack.view.home(**state, destination = None, running = False, last = None, slug = 'xxx', language = 'en')
+    view = threadvault.slack.view.home(**state, destination = None, running = False, last = None, planned = None, slug = 'xxx', language = 'en')
 
     assert [(element['action_id'], element['text']['text'], 'confirm' in element) for block in view['blocks'] if block['type'] == 'actions' for element in block['elements']] == buttons
 
@@ -141,7 +142,7 @@ def test_view_home_backup(
     notes: list[str]
 ) -> None:
 
-    view = threadvault.slack.view.home(**state, last = None, slug = 'xxx', language = 'en')
+    view = threadvault.slack.view.home(**state, last = None, planned = None, slug = 'xxx', language = 'en')
 
     assert [(element['action_id'], element['text']['text'], 'confirm' in element) for block in view['blocks'] if block['type'] == 'actions' for element in block['elements'] if element['action_id'] in (threadvault.slack.view.BACKUP_ACTION, threadvault.slack.view.RESYNCHRONISATION_ACTION)] == buttons
     assert [element['text'] for block in view['blocks'] if block['type'] == 'context' for element in block['elements']] == notes
@@ -152,7 +153,7 @@ def test_view_home_installation(
     texts: list[str]
 ) -> None:
 
-    view = threadvault.slack.view.home(**state, destination = None, running = False, last = None, slug = 'xxx1', language = 'en')
+    view = threadvault.slack.view.home(**state, destination = None, running = False, last = None, planned = None, slug = 'xxx1', language = 'en')
 
     assert [block['text']['text'] for block in view['blocks'] if 'text' in block] == texts
 

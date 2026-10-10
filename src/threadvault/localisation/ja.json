@@ -56,6 +56,8 @@
   "home.role.admin": "あなたは管理者です（操作の許可はありません）。",
   "home.role.operator": "あなたは操作を許可された管理者です。",
   "home.role.owner": "あなたはオーナーです。",
+  "home.schedule": "次回のバックアップ",
+  "home.schedule.missing": "予定なし",
   "home.transfer": "オーナーを譲る",
   "modal.close": "閉じる",
   "notice.connection": "<@{user}> さんが GitHub と連携しました。",

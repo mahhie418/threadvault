@@ -44,6 +44,14 @@ _MIGRATIONS: tuple[tuple[str, ...], ...] = (
         ) STRICT
         """,
     ),
+    (
+        """
+        CREATE TABLE schedule (
+            workspace_id TEXT PRIMARY KEY,
+            run_time TEXT NOT NULL
+        ) STRICT
+        """,
+    ),
 )
 
 class DatabaseError(Exception):

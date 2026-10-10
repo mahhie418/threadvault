@@ -23,6 +23,7 @@ import threadvault.github.token
 import threadvault.journal
 import threadvault.localisation
 import threadvault.product
+import threadvault.schedule
 import threadvault.slack.permission
 import threadvault.slack.view
 import threadvault.storage
@@ -37,7 +38,7 @@ def register(
     settings: threadvault.configuration.Settings,
     database: threadvault.storage.Database,
     manager: threadvault.github.token.TokenManager
-) -> None:
+) -> collections.abc.Callable[[str, datetime.datetime], None]:
 
     """Registers the listeners of the app.
 
@@ -56,17 +57,25 @@ def register(
     the App Home of whoever started it shows the backup while it runs. Every
     App Home shows how the last backup ended, and the owner and every admin
     hear by direct message when a backup fails. A resynchronisation is a
-    backup that fetches every channel in full and deletes nothing.
+    backup that fetches every channel in full and deletes nothing. Once the
+    destination is chosen, the daily backup runs at the time in the settings
+    of the workspace, and one missed while the app was stopped runs as soon
+    as the app runs again.
 
     Args:
         application: The application.
         settings: Settings of the deployment.
-        database: Database with the settings of each workspace and the record of its backups.
+        database: Database with the settings, the backups and the schedule of each workspace.
         manager: GitHub tokens of the deployment.
+
+    Returns:
+        The function that starts the daily backup once it is due, given the
+        workspace ID and the current time.
     """
 
     store = threadvault.customisation.SettingsIO(database)
     journal = threadvault.journal.RunIO(database)
+    calendar = threadvault.schedule.ScheduleIO(database)
     cache = threadvault.github.rest.RepositoryCache()
     worker = threadvault.worker.Worker(detach)
     guard = [threadvault.slack.permission.restrict(settings, store, frozenset({'owner'}))]
@@ -103,6 +112,19 @@ def register(
 
         return 'connected' if installations else 'uninstalled'
 
+    def plan(
+        team: str,
+        now: datetime.datetime
+    ) -> datetime.datetime | None:
+
+        workspace = store.load(team)
+        planned = calendar.load(team)
+
+        if not workspace.schedule_enabled or workspace.repository_name is None: return None
+        if planned is None: planned = threadvault.schedule.follow(now, workspace.schedule_time, workspace.workspace_timezone); calendar.save(team, planned)
+
+        return planned
+
     def refresh(
         team: str,
         user: str
@@ -110,7 +132,7 @@ def register(
 
         workspace = store.load(team)
 
-        application.client.views_publish(user_id = user, view = threadvault.slack.view.home(github = inspect(), destination = workspace.repository_name, running = worker.busy(), last = journal.load(team), role = threadvault.slack.permission.role(settings, workspace, user), slug = settings.github_app_slug, language = choose(user)))
+        application.client.views_publish(user_id = user, view = threadvault.slack.view.home(github = inspect(), destination = workspace.repository_name, running = worker.busy(), last = journal.load(team), planned = plan(team, datetime.datetime.now(datetime.UTC)), role = threadvault.slack.permission.role(settings, workspace, user), slug = settings.github_app_slug, language = choose(user)))
 
     def show(
         modal: str,
@@ -238,11 +260,11 @@ def register(
 
     def perform(
         team: str,
-        user: str,
+        user: str | None,
         days: int | None
     ) -> None:
 
-        refresh(team, user)
+        if user is not None: refresh(team, user)
 
         workspace = store.load(team)
 
@@ -257,6 +279,19 @@ def register(
         journal.save(team, threadvault.journal.Run(completion = datetime.datetime.now(datetime.UTC), repository = workspace.repository_name, commit = commit, reason = reason))
 
         if reason is not None: notify(team, 'notice.failure', message = reason)
+
+    def schedule(
+        team: str,
+        now: datetime.datetime
+    ) -> None:
+
+        planned = plan(team, now)
+
+        if planned is None or now < planned or not worker.start(lambda: perform(team, None, settings.threadvault_lookback_days), lambda: None): return
+
+        workspace = store.load(team)
+
+        calendar.save(team, threadvault.schedule.follow(now, workspace.schedule_time, workspace.workspace_timezone))
 
     def publish(
         event: dict[str, typing.Any],
@@ -523,6 +558,8 @@ def register(
     application.action(threadvault.slack.view.TRANSFER_ACTION, middleware = guard)(cede)
     application.view(threadvault.slack.view.TRANSFER_CALLBACK, middleware = guard)(nominate)
     application.view(threadvault.slack.view.TRANSFER_CONFIRMATION, middleware = guard)(transfer)
+
+    return schedule
 
 def detach(
     function: collections.abc.Callable[[], None]

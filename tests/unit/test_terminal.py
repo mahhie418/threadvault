@@ -1,5 +1,6 @@
 import collections.abc
 import contextlib
+import datetime
 import json
 import os
 import pathlib
@@ -156,10 +157,12 @@ def test_terminal_command_slack_serve(
 
     def start(
         _: slack_bolt.App,
-        token: str
+        token: str,
+        schedule: collections.abc.Callable[[str, datetime.datetime], None]
     ) -> None:
 
         tokens.append(token)
+        schedule('TXXX', datetime.datetime.now(datetime.UTC))
 
         raise KeyboardInterrupt
 

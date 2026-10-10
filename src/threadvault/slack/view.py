@@ -1,5 +1,6 @@
 """Views of the Slack app: the App Home and its modals."""
 
+import datetime
 import json
 import typing
 
@@ -45,6 +46,7 @@ def home(
     destination: str | None,
     running: bool,
     last: threadvault.journal.Run | None,
+    planned: datetime.datetime | None,
     role: threadvault.slack.permission.Role,
     slug: str,
     language: threadvault.configuration.Language
@@ -54,7 +56,7 @@ def home(
 
     Everyone sees when the last backup ended and whether it succeeded. The
     owner and the admins also see the commit that it left in the vault, or
-    why it failed.
+    why it failed. Everyone also sees when the daily backup runs next.
 
     While a backup is running, everyone sees so. Otherwise, while GitHub is
     connected and the destination is chosen, the owner and the admins allowed
@@ -77,6 +79,7 @@ def home(
         destination: Repository of the vault, as owner/name, or None while none is chosen.
         running: Whether a backup is running.
         last: The backup that ended last, or None before the first one ends.
+        planned: Time of the next daily backup, or None while none is planned.
         role: Role of the viewer.
         slug: URL slug of the GitHub App.
         language: Language of the viewer.
@@ -100,6 +103,7 @@ def home(
         blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate(f'home.role.{role}', language)}]})
 
     fields.append((threadvault.localisation.translate('home.backup.last', language), _report(last = last, role = role, language = language)))
+    fields.append((threadvault.localisation.translate('home.schedule', language), _date(planned) if planned else threadvault.localisation.translate('home.schedule.missing', language)))
     blocks.append({'type': 'section', 'fields': [_text(title, text) for title, text in fields]})
 
     if running: blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate('home.backup.running', language)}]})
@@ -397,12 +401,18 @@ def _report(
 
     if last is None: return threadvault.localisation.translate('home.backup.missing', language)
 
-    time = f'<!date^{int(last.completion.timestamp())}^{{date_short}} {{time}}|{last.completion:%Y-%m-%d %H:%M} UTC>'
+    time = _date(last.completion)
 
     if last.commit is None: text, detail = threadvault.localisation.translate('home.backup.failure', language, time = time), last.reason
     else: text, detail = threadvault.localisation.translate('home.backup.success', language, time = time), f'<https://github.com/{last.repository}/commit/{last.commit}|{last.commit[:7]}>'
 
     return text if role == 'member' else f'{text}\n{detail}'
+
+def _date(
+    moment: datetime.datetime
+) -> str:
+
+    return f'<!date^{int(moment.timestamp())}^{{date_short}} {{time}}|{moment:%Y-%m-%d %H:%M} UTC>'
 
 def _option(
     name: str

@@ -56,6 +56,8 @@
   "home.role.admin": "You are an admin without permission to operate the app.",
   "home.role.operator": "You are an admin with permission to operate the app.",
   "home.role.owner": "You are the owner.",
+  "home.schedule": "Next backup",
+  "home.schedule.missing": "Not scheduled",
   "home.transfer": "Transfer ownership",
   "modal.close": "Close",
   "notice.connection": "<@{user}> connected GitHub.",
