@@ -11,6 +11,7 @@ import pytest
 import respx
 import slack_sdk
 
+import threadvault.backup.backlog
 import threadvault.backup.runner
 import threadvault.customisation
 import threadvault.github.rest
@@ -29,6 +30,10 @@ THREAD_INSERTION = [
     {'latest_reply': '1791160200.000000', 'reply_count': 1, 'text': 'xxx', 'thread_ts': '1791158400.000000', 'ts': '1791158400.000000', 'type': 'message', 'user': 'UXXX1'},
     {'parent_user_id': 'UXXX1', 'text': 'xxx', 'thread_ts': '1791158400.000000', 'ts': '1791160200.000000', 'type': 'message', 'user': 'UXXX2'}
 ]
+
+REPLY_THREAD = {'parent_user_id': 'UXXX1', 'text': 'xxx', 'thread_ts': '1510963199.000000', 'ts': '1791158400.000000', 'type': 'message', 'user': 'UXXX2'}
+
+BACKLOG_THREAD = threadvault.backup.backlog.Backlog(threads = {'CXXX1': frozenset({'1510963199.000000', '1791158400.000001'})})
 
 ATTACHMENT_CONTENT = [
     {'created': 1791158400, 'id': 'FXXX1', 'mimetype': 'text/plain', 'mode': 'hosted', 'name': 'xxx.txt', 'permalink': 'https://xxx.slack.com/files/UXXX1/FXXX1/xxx.txt', 'size': 3, 'url_private_download': 'https://files.slack.com/xxx1'},
@@ -78,17 +83,19 @@ def run(
     slack: slack_sdk.web.WebClient,
     vault: pathlib.Path,
     settings: threadvault.customisation.Settings = SETTINGS,
-    limit: int | None = None
+    limit: int | None = None,
+    backlog: threadvault.backup.backlog.Backlog | None = None
 ) -> list[threadvault.backup.runner.Result]:
 
-    return threadvault.backup.runner.run(slack, vault, settings, days = 30, limit = limit, now = NOW)
+    return threadvault.backup.runner.run(slack, vault, settings, days = 30, limit = limit, now = NOW, backlog = backlog)
 
 def publish(
     slack: slack_sdk.web.WebClient,
-    directory: pathlib.Path
+    directory: pathlib.Path,
+    backlog: threadvault.backup.backlog.Backlog | None = None
 ) -> tuple[list[threadvault.backup.runner.Result], str]:
 
-    return threadvault.backup.runner.publish(slack, SETTINGS, directory = directory, full_name = 'xxx/xxx', token = lambda: 'ghu_xxx', days = 30, limit = None, now = NOW)
+    return threadvault.backup.runner.publish(slack, SETTINGS, directory = directory, full_name = 'xxx/xxx', token = lambda: 'ghu_xxx', days = 30, limit = None, now = NOW, backlog = backlog)
 
 def survey(
     root: pathlib.Path
@@ -213,6 +220,33 @@ def test_runner_vault_selection(
     assert [channel['id'] for channel in read(tmp_path, 'groups.json')] == ['CXXX2']
     assert read(tmp_path, 'channels.json') == []
     assert threadvault.vault.state.load(tmp_path) == {'CXXX2': 'xxx'}
+
+def test_runner_vault_backlog(
+    tmp_path: pathlib.Path,
+    remote: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    directory = pathlib.Path(os.path.join(tmp_path, 'clone'))
+
+    with respx.mock:
+
+        respx.get(REPOSITORY).respond(200, json = {'clone_url': str(remote), 'full_name': 'xxx/xxx', 'private': True})
+        respx.get(f'{threadvault.github.rest.API_URL}/user').respond(200, json = {'id': 1, 'login': 'xxx'})
+
+        publish(slack, directory)
+
+        workspace['messages']['CXXX1'] += [REPLY_THREAD]
+
+        publish(slack, directory)
+
+        assert not pathlib.Path(os.path.join(directory, 'raw', 'general', '2026-10-05.json')).exists()
+
+        results, _ = publish(slack, directory, BACKLOG_THREAD)
+
+    assert [message['ts'] for message in read(directory, 'general', '2026-10-05.json')] == ['1791158400.000000']
+    assert results[1].messages == 6
 
 def test_runner_vault_attachment(
     tmp_path: pathlib.Path,

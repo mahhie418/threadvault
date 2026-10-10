@@ -15,6 +15,7 @@ import zoneinfo
 import slack_bolt
 import slack_sdk.errors
 
+import threadvault.backup.backlog
 import threadvault.backup.runner
 import threadvault.configuration
 import threadvault.customisation
@@ -66,6 +67,10 @@ def register(
     whether they save attached files and up to which size, and the language
     of the Markdown.
 
+    A reply to a thread marks the thread, and the next backup fetches the
+    marked threads again, so that it does not miss a reply to a thread older
+    than the days that it fetches. The marks go once the backup succeeds.
+
     Args:
         application: The application.
         settings: Settings of the deployment.
@@ -80,6 +85,7 @@ def register(
     store = threadvault.customisation.SettingsIO(database)
     journal = threadvault.journal.RunIO(database)
     calendar = threadvault.schedule.ScheduleIO(database)
+    backlog = threadvault.backup.backlog.BacklogIO(database)
     cache = threadvault.github.rest.RepositoryCache()
     worker = threadvault.worker.Worker(detach)
     guard = [threadvault.slack.permission.restrict(settings, store, frozenset({'owner'}))]
@@ -275,10 +281,12 @@ def register(
         if workspace.repository_name is None: return
 
         directory = pathlib.Path(os.path.join(settings.threadvault_data_directory, threadvault.backup.runner.VAULTS_DIRECTORY, *workspace.repository_name.split('/')))
+        now, marks = datetime.datetime.now(datetime.UTC), backlog.load(team)
         commit, reason = None, None
 
-        try: _, commit = threadvault.backup.runner.publish(application.client, workspace, directory = directory, full_name = workspace.repository_name, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = days, limit = settings.threadvault_deletions_maximum, now = datetime.datetime.now(datetime.UTC))
+        try: _, commit = threadvault.backup.runner.publish(application.client, workspace, directory = directory, full_name = workspace.repository_name, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = days, limit = settings.threadvault_deletions_maximum, now = now, backlog = marks)
         except (threadvault.backup.runner.VaultError, threadvault.backup.runner.LockError, threadvault.github.rest.GitHubError, threadvault.github.token.TokenError, threadvault.vault.repository.GitError, threadvault.vault.state.StateError, slack_sdk.errors.SlackApiError) as error: _LOGGER.warning('Backup failed: %s', error); reason = str(error)
+        else: backlog.clear(team, now)
 
         journal.save(team, threadvault.journal.Run(completion = datetime.datetime.now(datetime.UTC), repository = workspace.repository_name, commit = commit, reason = reason))
 
@@ -305,6 +313,17 @@ def register(
         if event.get('tab') != 'home' or context.team_id is None: return
 
         refresh(context.team_id, event['user'])
+
+    def note(
+        event: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        team, thread_ts = context.team_id, event.get('thread_ts')
+
+        if team is None or thread_ts is None or thread_ts == event['ts']: return
+
+        backlog.mark(team, event['channel'], thread_ts, datetime.datetime.now(datetime.UTC))
 
     def connect(
         ack: slack_bolt.Ack,
@@ -603,6 +622,7 @@ def register(
 
     application.use(threadvault.slack.permission.restrict(settings, store, frozenset({'owner', 'operator'})))
     application.event('app_home_opened')(publish)
+    application.event('message')(note)
     application.action(threadvault.slack.view.CONNECTION_ACTION)(connect)
     application.action(threadvault.slack.view.DISCONNECTION_ACTION)(disconnect)
     application.action(threadvault.slack.view.DESTINATION_ACTION)(offer)

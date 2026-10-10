@@ -6,6 +6,7 @@ import httpx
 import pytest
 import respx
 import slack_sdk
+import slack_sdk.errors
 import slack_sdk.http_retry
 
 import threadvault.slack.api
@@ -68,6 +69,18 @@ def test_api_thread_comprehensiveness(
     messages = threadvault.slack.api.replies(slack, 'CXXX1', '1510963199.000000')
 
     assert [message['ts'] for message in messages] == ['1510963199.000000', '1791072000.000000']
+
+def test_api_thread_absence(
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    assert threadvault.slack.api.replies(slack, 'CXXX1', '1791158400.000000') == []
+
+def test_api_thread_failure(
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    with pytest.raises(slack_sdk.errors.SlackApiError, match = 'channel_not_found'): threadvault.slack.api.replies(slack, 'CXXX9', '1510963199.000000')
 
 @pytest.mark.parametrize(('mimetype', 'category'), MIMETYPES_ACCEPTED)
 def test_api_file_download(

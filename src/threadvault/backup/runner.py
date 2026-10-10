@@ -14,6 +14,7 @@ import typing
 
 import slack_sdk
 
+import threadvault.backup.backlog
 import threadvault.backup.fetch
 import threadvault.configuration
 import threadvault.customisation
@@ -74,7 +75,8 @@ def run(
     days: int | None,
     limit: int | None,
     now: datetime.datetime,
-    checkpoint: collections.abc.Callable[[Result], None] | None = None
+    checkpoint: collections.abc.Callable[[Result], None] | None = None,
+    backlog: threadvault.backup.backlog.Backlog | None = None
 ) -> list[Result]:
 
     """Backs up the workspace into a vault directory.
@@ -94,6 +96,9 @@ def run(
     file as soon as it is written, so that a run that stops part way does not
     fetch it in full again.
 
+    The threads that events marked are fetched again whatever their age, as
+    a reply to a thread older than `days` changes no message in the history.
+
     Args:
         client: Slack client for the workspace.
         vault: Root directory of the vault, created when missing.
@@ -103,6 +108,7 @@ def run(
         now: The current time.
         checkpoint: Function called with the result of each channel fetched in full,
                     once the state file lists it, or None.
+        backlog: What events marked for the run to fetch again, or None.
 
     Returns:
         What the run did to each channel, in the order of conversations.list.
@@ -122,6 +128,7 @@ def run(
     raw = pathlib.Path(os.path.join(vault, threadvault.vault.export.RAW_DIRECTORY))
     transcripts = pathlib.Path(os.path.join(vault, threadvault.vault.markdown.TRANSCRIPTS_DIRECTORY))
     progress = {channel: directory for channel, directory in directories.items() if channel in previous}
+    marked = backlog or threadvault.backup.backlog.Backlog()
     results = []
 
     _move((raw, transcripts), previous, directories)
@@ -137,7 +144,7 @@ def run(
         stored = _read(pathlib.Path(os.path.join(raw, directory)))
         oldest, latest = threadvault.backup.fetch.window(now, days if recent else None)
         history = threadvault.slack.api.history(client, channel['id'], oldest = oldest, latest = latest)
-        threads = {thread_ts: threadvault.slack.api.replies(client, channel['id'], thread_ts) for thread_ts in threadvault.backup.fetch.threads(history, stored)}
+        threads = {thread_ts: threadvault.slack.api.replies(client, channel['id'], thread_ts) for thread_ts in threadvault.backup.fetch.threads(history, stored, marked.threads.get(channel['id'], ()))}
         outcome = threadvault.vault.merge.merge(stored, history, threads, oldest = oldest, latest = latest, now = now, limit = limit if recent else 0)
         saved, failed = _download(client, vault, itertools.chain(history, *threads.values()), settings.attachment_size_maximum * 1024 * 1024) if settings.attachments_enabled else (0, 0)
         paths = {file['id']: threadvault.vault.files.locate(file) for file in threadvault.vault.files.select(outcome.messages)}
@@ -171,7 +178,8 @@ def publish(
     token: collections.abc.Callable[[], str],
     days: int | None,
     limit: int | None,
-    now: datetime.datetime
+    now: datetime.datetime,
+    backlog: threadvault.backup.backlog.Backlog | None = None
 ) -> tuple[list[Result], str]:
 
     """Backs up the workspace into its vault on GitHub.
@@ -198,6 +206,7 @@ def publish(
         days: Number of recent days to fetch again, or None to fetch every channel in full.
         limit: Most messages that the run may delete, or None for no limit.
         now: The current time.
+        backlog: What events marked for the run to fetch again, or None.
 
     Returns:
         What the run did to each channel, in the order of conversations.list,
@@ -234,7 +243,7 @@ def publish(
 
             _push(repository, f'Back up #{result.directory}', token, full_name)
 
-        results = run(client, directory, settings, days = days, limit = limit, now = now, checkpoint = checkpoint)
+        results = run(client, directory, settings, days = days, limit = limit, now = now, checkpoint = checkpoint, backlog = backlog)
 
         _push(repository, f'Back up at {now:%Y-%m-%d %H:%M} UTC', token, full_name)
 

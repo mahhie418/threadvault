@@ -217,6 +217,6 @@ def test_terminal_command_print_manifest(
     assert manifest['features']['app_home']['home_tab_enabled']
     assert manifest['features']['app_home']['messages_tab_enabled']
     assert manifest['features']['app_home']['messages_tab_read_only_enabled']
-    assert manifest['settings']['event_subscriptions']['bot_events'] == ['app_home_opened']
+    assert manifest['settings']['event_subscriptions']['bot_events'] == ['app_home_opened', 'message.channels', 'message.groups']
     assert manifest['settings']['interactivity']['is_enabled']
     assert manifest['settings']['socket_mode_enabled']

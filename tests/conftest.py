@@ -46,13 +46,15 @@ class Slack(slack_sdk.web.WebClient):
             case 'conversations.list': data = page('channels', [channel for channel in self.workspace['channels'] if ('private_channel' if channel['is_private'] else 'public_channel') in types.split(',')], arguments)
             case 'conversations.members': data = page('members', self.workspace['members'][arguments['channel']], arguments)
             case 'conversations.history': data = page('messages', [message for message in reversed(messages) if message.get('thread_ts', message['ts']) == message['ts'] and within(message, arguments)], arguments)
+            case 'conversations.replies' if arguments['channel'] not in conversations: data = {'ok': False, 'error': 'channel_not_found'}
+            case 'conversations.replies' if all(message['ts'] != arguments['ts'] for message in messages): data = {'ok': False, 'error': 'thread_not_found'}
             case 'conversations.replies': data = page('messages', [message for message in messages if message.get('thread_ts') == arguments['ts']], arguments)
             case 'users.info': data = {'user': next((user for user in self.workspace['users'] if user['id'] == arguments['user']), {'id': arguments['user']})}
             case 'views.open': data = {'view': {'id': 'VXXX'}}
             case 'chat.postMessage' | 'views.publish' | 'views.update': data = {}
             case _: raise NotImplementedError(api_method)
 
-        return slack_sdk.web.SlackResponse(client = self, http_verb = http_verb, api_url = api_method, req_args = {'params': arguments}, data = {'ok': True, **data}, headers = {}, status_code = 200)
+        return slack_sdk.web.SlackResponse(client = self, http_verb = http_verb, api_url = api_method, req_args = {'params': arguments}, data = {'ok': True, **data}, headers = {}, status_code = 200).validate()
 
 @pytest.fixture
 def workspace() -> dict[str, typing.Any]:

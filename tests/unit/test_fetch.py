@@ -32,3 +32,7 @@ def test_fetch_message_change(
 ) -> None:
 
     assert threadvault.backup.fetch.threads(history, stored) == expected
+
+def test_fetch_thread_mark() -> None:
+
+    assert threadvault.backup.fetch.threads([{'ts': '300.0', 'reply_count': 1, 'latest_reply': '400.0'}], [], ['300.0', '100.0']) == ['100.0', '300.0']

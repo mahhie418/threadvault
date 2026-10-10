@@ -14,6 +14,7 @@ import slack_bolt
 import slack_sdk
 import slack_sdk.errors
 
+import threadvault.backup.backlog
 import threadvault.backup.runner
 import threadvault.configuration
 import threadvault.customisation
@@ -41,6 +42,8 @@ CODE_ISSUED = {'device_code': 'xxx', 'expires_in': 900, 'interval': 0, 'user_cod
 TOKENS_ISSUED = {'access_token': 'ghu_xxx', 'expires_in': 28800, 'refresh_token': 'ghr_xxx', 'refresh_token_expires_in': 15897600}
 REPOSITORIES_RESPONDED = {'total_count': 2, 'repositories': [{'full_name': 'xxx/xxx1', 'private': True}, {'full_name': 'xxx/xxx2', 'private': True}]}
 INSTALLATIONS_RESPONDED = {'total_count': 1, 'installations': [{'id': 1}]}
+
+BACKLOG_THREAD = threadvault.backup.backlog.Backlog(threads = {'CXXX1': frozenset({'1510963199.000000'})})
 
 TABS_OPENED = [('home', 1), ('messages', 0)]
 VIEWERS_HOME = [('UXXX1', 'owner'), ('UXXX2', 'admin'), ('UXXX3', 'member')]
@@ -75,6 +78,13 @@ ACTIONS_REFUSED = [
 ERRORS_BACKUP = [
     threadvault.backup.runner.VaultError('xxx'),
     threadvault.backup.runner.LockError('xxx')
+]
+
+MESSAGES_MARKED = [
+    ({'ts': '1791072000.000000', 'thread_ts': '1510963199.000000'}, BACKLOG_THREAD),
+    ({'ts': '1791072000.000000', 'thread_ts': '1510963199.000000', 'subtype': 'thread_broadcast'}, BACKLOG_THREAD),
+    ({'ts': '1791072000.000000'}, threadvault.backup.backlog.Backlog()),
+    ({'ts': '1510963199.000000', 'thread_ts': '1510963199.000000'}, threadvault.backup.backlog.Backlog())
 ]
 
 TIME_CHECKED = datetime.datetime(2026, 10, 9, 15, 0, tzinfo = datetime.UTC)
@@ -182,6 +192,13 @@ def home(
 ) -> slack_bolt.BoltResponse:
 
     return application.dispatch(slack_bolt.BoltRequest(body = {'type': 'event_callback', 'team_id': 'TXXX', 'event': {'type': 'app_home_opened', 'user': user, 'channel': 'DXXX', 'tab': tab}}, mode = 'socket_mode'))
+
+def post(
+    application: slack_bolt.App,
+    message: dict[str, typing.Any]
+) -> slack_bolt.BoltResponse:
+
+    return application.dispatch(slack_bolt.BoltRequest(body = {'type': 'event_callback', 'team_id': 'TXXX', 'event': {'type': 'message', 'channel': 'CXXX1', 'user': 'UXXX2', 'text': 'xxx'} | message}, mode = 'socket_mode'))
 
 def press(
     application: slack_bolt.App,
@@ -696,15 +713,17 @@ def test_handler_backup_start(
         token: collections.abc.Callable[[], str],
         days: int | None,
         limit: int | None,
-        now: datetime.datetime
+        now: datetime.datetime,
+        backlog: threadvault.backup.backlog.Backlog | None = None
     ) -> tuple[list[threadvault.backup.runner.Result], str]:
 
-        runs.append((settings.repository_name, full_name, directory.parts[-3:], token(), days, limit, now.tzinfo))
+        runs.append((settings.repository_name, full_name, directory.parts[-3:], token(), days, limit, now.tzinfo, backlog))
 
         return [], 'xxx'
 
     monkeypatch.setattr(threadvault.backup.runner, 'publish', publish)
     threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = 'xxx/xxx'), update_user = 'UXXX1')
+    threadvault.backup.backlog.BacklogIO(database).mark('TXXX', 'CXXX1', '1510963199.000000', TIME_CHECKED)
     manager.save(TOKENS_SAVED)
 
     with respx.mock:
@@ -716,8 +735,9 @@ def test_handler_backup_start(
     last = threadvault.journal.RunIO(database).load('TXXX')
     planned = threadvault.schedule.ScheduleIO(database).load('TXXX')
 
-    assert runs == [('xxx/xxx', 'xxx/xxx', ('vaults', 'xxx', 'xxx'), 'ghu_xxx', days, None, datetime.UTC)]
+    assert runs == [('xxx/xxx', 'xxx/xxx', ('vaults', 'xxx', 'xxx'), 'ghu_xxx', days, None, datetime.UTC, BACKLOG_THREAD)]
     assert last == threadvault.journal.Run(completion = unittest.mock.ANY, repository = 'xxx/xxx', commit = 'xxx', reason = None)
+    assert threadvault.backup.backlog.BacklogIO(database).load('TXXX') == threadvault.backup.backlog.Backlog()
     assert calls(workspace, 'views.publish') == [{'user_id': 'UXXX1', 'view': threadvault.slack.view.home(github = 'connected', destination = 'xxx/xxx', running = running, last = run, planned = planned, role = 'owner', slug = 'xxx', language = 'ja')} for running, run in ((True, None), (False, last))]
     assert calls(workspace, 'chat.postMessage') == []
 
@@ -733,6 +753,7 @@ def test_handler_backup_failure(
 
     monkeypatch.setattr(threadvault.backup.runner, 'publish', unittest.mock.Mock(side_effect = error))
     threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = 'xxx/xxx'), update_user = 'UXXX1')
+    threadvault.backup.backlog.BacklogIO(database).mark('TXXX', 'CXXX1', '1510963199.000000', TIME_CHECKED)
 
     assert press(application, 'UXXX1', threadvault.slack.view.BACKUP_ACTION).status == 200
 
@@ -741,6 +762,7 @@ def test_handler_backup_failure(
 
     assert 'Backup failed: xxx' in caplog.text
     assert last == threadvault.journal.Run(completion = unittest.mock.ANY, repository = 'xxx/xxx', commit = None, reason = 'xxx')
+    assert threadvault.backup.backlog.BacklogIO(database).load('TXXX') == BACKLOG_THREAD
     assert [arguments['view'] for arguments in calls(workspace, 'views.publish')] == [threadvault.slack.view.home(github = 'disconnected', destination = 'xxx/xxx', running = running, last = run, planned = planned, role = 'owner', slug = 'xxx', language = 'ja') for running, run in ((True, None), (False, last))]
     assert calls(workspace, 'chat.postMessage') == [{'channel': admin, 'text': threadvault.localisation.translate('notice.failure', 'ja', message = 'xxx')} for admin in ('UXXX1', 'UXXX2')]
 
@@ -793,6 +815,17 @@ def test_handler_backup_exclusivity(
     assert not publish.called
     assert [arguments['view'] for arguments in calls(workspace, 'views.publish')] == [threadvault.slack.view.home(github = 'disconnected', destination = 'xxx/xxx', running = True, last = None, planned = planned, role = 'owner', slug = 'xxx', language = 'ja')]
 
+@pytest.mark.parametrize(('message', 'backlog'), MESSAGES_MARKED)
+def test_handler_backlog_marking(
+    application: slack_bolt.App,
+    database: threadvault.storage.Database,
+    message: dict[str, typing.Any],
+    backlog: threadvault.backup.backlog.Backlog
+) -> None:
+
+    assert post(application, message).status == 200
+    assert threadvault.backup.backlog.BacklogIO(database).load('TXXX') == backlog
+
 def test_handler_schedule_plan(
     monkeypatch: pytest.MonkeyPatch,
     database: threadvault.storage.Database,
@@ -832,10 +865,11 @@ def test_handler_schedule_timing(
         token: collections.abc.Callable[[], str],
         days: int | None,
         limit: int | None,
-        now: datetime.datetime
+        now: datetime.datetime,
+        backlog: threadvault.backup.backlog.Backlog | None = None
     ) -> tuple[list[threadvault.backup.runner.Result], str]:
 
-        runs.append((settings.repository_name, full_name, directory.parts[-3:], token(), days, limit, now.tzinfo))
+        runs.append((settings.repository_name, full_name, directory.parts[-3:], token(), days, limit, now.tzinfo, backlog))
 
         return [], 'xxx'
 
@@ -846,7 +880,7 @@ def test_handler_schedule_timing(
 
     schedule('TXXX', TIME_CHECKED)
 
-    assert runs == [('xxx/xxx', 'xxx/xxx', ('vaults', 'xxx', 'xxx'), 'ghu_xxx', 30, None, datetime.UTC)] * count
+    assert runs == [('xxx/xxx', 'xxx/xxx', ('vaults', 'xxx', 'xxx'), 'ghu_xxx', 30, None, datetime.UTC, threadvault.backup.backlog.Backlog())] * count
     assert threadvault.schedule.ScheduleIO(database).load('TXXX') == planned
     assert calls(workspace, 'views.publish') == []
 
