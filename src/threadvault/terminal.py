@@ -74,7 +74,7 @@ def _build() -> argparse.ArgumentParser:
     manifest.set_defaults(handler = _manifest)
     doctor = commands.add_parser('doctor', help = 'check the settings, Slack, git, GitHub and the destination')
     doctor.set_defaults(handler = _doctor)
-    setup = commands.add_parser('setup', help = 'create the Slack app and register the GitHub App, writing the settings file')
+    setup = commands.add_parser('setup', help = 'create the Slack app, register the GitHub App and choose the owner, writing the settings file')
     setup.set_defaults(handler = _setup)
 
     return parser
@@ -245,7 +245,7 @@ def _setup(
 
     try:
 
-        _create(); _register()
+        _create(); _register(); _appoint()
 
     except (threadvault.configuration.ConfigurationError, slack_sdk.errors.SlackApiError) as error:
 
@@ -326,6 +326,47 @@ def _confirm(
 
     threadvault.configuration.load({'GITHUB_APP_CLIENT_ID': client, 'GITHUB_APP_SLUG': slug}).require('github_app_client_id', 'github_app_slug')
     threadvault.github.oauth.request(client)
+
+def _appoint() -> None:
+
+    settings = threadvault.configuration.load()
+    client = threadvault.slack.api.connect(settings.slack_bot_token)
+
+    print('Copy the member ID of the owner in Slack: open the profile, choose the ⋮ button and Copy member ID.', flush = True)
+
+    while True:
+
+        owner = _ask('Member ID of the owner', settings.threadvault_owner_id, secret = False)
+
+        try: name = _name(client, owner)
+        except (threadvault.configuration.ConfigurationError, slack_sdk.errors.SlackApiError) as error: print(f'error: {error}', file = sys.stderr)
+        else: break
+
+    while True:
+
+        admins = _ask('Member IDs of other admins, separated by commas', ','.join(sorted(settings.threadvault_admin_ids)), secret = False)
+
+        try: threadvault.configuration.load({'THREADVAULT_ADMIN_IDS': admins})
+        except threadvault.configuration.ConfigurationError as error: print(f'error: {error}', file = sys.stderr)
+        else: break
+
+    threadvault.configuration.save({'THREADVAULT_OWNER_ID': owner, 'THREADVAULT_ADMIN_IDS': admins})
+
+    print(f'ok: owner: {name}')
+
+def _name(
+    client: slack_sdk.web.WebClient,
+    user: str
+) -> str:
+
+    threadvault.configuration.load({'THREADVAULT_OWNER_ID': user}).require('threadvault_owner_id')
+    entry = client.users_info(user = user).get('user', {})
+
+    if entry.get('is_bot') or entry.get('deleted'): raise threadvault.configuration.ConfigurationError(f'{user} is not a person in the workspace')
+
+    profile: dict[str, str] = entry.get('profile', {})
+
+    return profile.get('display_name') or profile.get('real_name') or entry.get('name') or user
 
 def _ask(
     question: str,

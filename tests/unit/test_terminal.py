@@ -73,18 +73,26 @@ APPS_SETUP = [
     (['', 'xxx', 'xxx', 'xxx', 'xxx'], [threadvault.github.oauth.OAuthError('device_flow_disabled', 'xxx'), None], 'https://github.com/settings/apps/new', 'error: xxx\n', {'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'})
 ]
 
+OWNERS_SETUP = [
+    (['UXXX2', ''], 'ok: owner: テスト\n', '', {'THREADVAULT_OWNER_ID': 'UXXX2', 'THREADVAULT_ADMIN_IDS': ''}),
+    (['xxx', 'UXXX2', ''], 'ok: owner: テスト\n', 'error: THREADVAULT_OWNER_ID must be one Slack user ID\n', {'THREADVAULT_OWNER_ID': 'UXXX2', 'THREADVAULT_ADMIN_IDS': ''}),
+    (['UXXX1', 'UXXX2', ''], 'ok: owner: テスト\n', 'error: UXXX1 is not a person in the workspace\n', {'THREADVAULT_OWNER_ID': 'UXXX2', 'THREADVAULT_ADMIN_IDS': ''}),
+    (['UXXX2', 'xxx', 'UXXX3,UXXX4'], 'ok: owner: テスト\n', 'error: THREADVAULT_ADMIN_IDS contains invalid Slack user IDs: xxx\n', {'THREADVAULT_OWNER_ID': 'UXXX2', 'THREADVAULT_ADMIN_IDS': 'UXXX3,UXXX4'})
+]
+
 def answer(
     monkeypatch: pytest.MonkeyPatch,
     *,
     tokens: collections.abc.Sequence[str | Exception] = ('xoxb-xxx', 'xapp-xxx'),
     apps: collections.abc.Sequence[str | Exception] = ('', 'xxx', 'xxx'),
-    codes: collections.abc.Sequence[Exception | None] = (None,)
+    codes: collections.abc.Sequence[Exception | None] = (None,),
+    owners: collections.abc.Sequence[str | Exception] = ('UXXX2', '')
 ) -> tuple[unittest.mock.Mock, unittest.mock.Mock]:
 
     browse, request = unittest.mock.Mock(), unittest.mock.Mock(side_effect = codes)
 
     monkeypatch.setattr(getpass, 'getpass', unittest.mock.Mock(side_effect = tokens))
-    monkeypatch.setattr(builtins, 'input', unittest.mock.Mock(side_effect = apps))
+    monkeypatch.setattr(builtins, 'input', unittest.mock.Mock(side_effect = [*apps, *owners]))
     monkeypatch.setattr(webbrowser, 'open', browse)
     monkeypatch.setattr(threadvault.github.oauth, 'request', request)
 
@@ -551,3 +559,53 @@ class TestTerminalCommandSetup:
         assert urllib.parse.parse_qs(url.query) == {'name': ['ThreadVault for xxx'], 'url': ['https://xxx.slack.com/'], 'public': ['false'], 'webhook_active': ['false'], 'contents': ['write'], 'administration': ['write'], 'metadata': ['read']}
         assert request.call_args_list == [unittest.mock.call('xxx')] * len(codes)
         assert {name: value for name, value in dotenv.dotenv_values(configuration).items() if name.startswith('GITHUB_APP_')} == written
+
+    @pytest.mark.parametrize(('owners', 'out', 'err', 'written'), OWNERS_SETUP)
+    def test_owner(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        slack: slack_sdk.web.WebClient,
+        configuration: pathlib.Path,
+        owners: list[str],
+        out: str,
+        err: str,
+        written: dict[str, str]
+    ) -> None:
+
+        def connect(
+            _: str
+        ) -> slack_sdk.web.WebClient:
+
+            return slack
+
+        monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+        answer(monkeypatch, owners = owners)
+
+        assert threadvault.terminal.main(['setup']) == 0
+
+        captured = capsys.readouterr()
+
+        assert out in captured.out
+        assert captured.err == err
+        assert {name: value for name, value in dotenv.dotenv_values(configuration).items() if name.startswith('THREADVAULT_')} == written
+
+    def test_bot(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        slack: slack_sdk.web.WebClient
+    ) -> None:
+
+        def connect(
+            _: str
+        ) -> slack_sdk.web.WebClient:
+
+            return slack
+
+        monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+        monkeypatch.setattr(slack, 'users_info', unittest.mock.Mock(side_effect = [{'user': {'id': 'UXXX9', 'is_bot': True}}, {'user': {'id': 'UXXX2', 'name': 'xxx'}}]))
+        answer(monkeypatch, owners = ['UXXX9', 'UXXX2', ''])
+
+        assert threadvault.terminal.main(['setup']) == 0
+        assert capsys.readouterr().err == 'error: UXXX9 is not a person in the workspace\n'
