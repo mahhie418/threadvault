@@ -6,10 +6,12 @@ import importlib.resources
 import json
 import os
 import pathlib
+import re
 import sys
 import unittest.mock
 import urllib.parse
 import webbrowser
+import wsgiref.simple_server
 
 import cryptography.fernet
 import dotenv
@@ -28,6 +30,7 @@ import threadvault.github.oauth
 import threadvault.github.rest
 import threadvault.github.token
 import threadvault.product
+import threadvault.shortener
 import threadvault.slack.api
 import threadvault.slack.application
 import threadvault.storage
@@ -36,7 +39,7 @@ import threadvault.vault.repository
 
 ENVIRONMENTS_START = [
     ({'SLACK_APP_TOKEN': 'xapp-xxx', 'THREADVAULT_OWNER_ID': 'UXXX1', 'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'}, 0, '', ['xapp-xxx']),
-    ({'SLACK_APP_TOKEN': '', 'THREADVAULT_OWNER_ID': '', 'GITHUB_APP_CLIENT_ID': '', 'GITHUB_APP_SLUG': ''}, 1, 'error: Missing required environment variables: SLACK_APP_TOKEN, THREADVAULT_OWNER_ID, GITHUB_APP_CLIENT_ID, GITHUB_APP_SLUG\n', [])
+    ({'SLACK_APP_TOKEN': '', 'THREADVAULT_OWNER_ID': '', 'GITHUB_APP_CLIENT_ID': '', 'GITHUB_APP_SLUG': ''}, 1, '[ERROR] Missing required environment variables: SLACK_APP_TOKEN, THREADVAULT_OWNER_ID, GITHUB_APP_CLIENT_ID, GITHUB_APP_SLUG\n', [])
 ]
 
 NOW = datetime.datetime.now(datetime.UTC)
@@ -46,53 +49,110 @@ TOKENS_SAVED = threadvault.github.oauth.Tokens(access_token = 'ghu_xxx', access_
 ENVIRONMENT_DOCTOR = {'SLACK_BOT_TOKEN': 'xoxb-xxx', 'SLACK_APP_TOKEN': 'xapp-xxx', 'THREADVAULT_OWNER_ID': 'UXXX1', 'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'}
 
 DESTINATIONS_CHECKED = [
-    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 0, 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\nok: GitHub: xxx\nok: destination: xxx/xxx\n', ''),
-    ([], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 1, 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\n', 'error: GitHub is not connected yet\n'),
-    ([TOKENS_SAVED], httpx.Response(500), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 1, 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\n', 'error: GitHub answered 500 to GET /user: \n'),
-    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), None, httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 1, 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\nok: GitHub: xxx\n', 'error: No destination is chosen yet\n'),
-    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(404, json = {'message': 'Not Found'}), 1, 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\nok: GitHub: xxx\n', 'error: xxx/xxx does not exist\n'),
-    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': False}), 1, 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\nok: GitHub: xxx\n', 'error: xxx/xxx is public\n')
+    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 0, '[OK] settings ({file})\n[OK] Slack: https://xxx.slack.com/\n[OK] git 2.47.0\n[OK] GitHub: xxx\n[OK] destination: xxx/xxx\n', ''),
+    ([], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 1, '[OK] settings ({file})\n[OK] Slack: https://xxx.slack.com/\n[OK] git 2.47.0\n', '[ERROR] GitHub is not connected yet\n'),
+    ([TOKENS_SAVED], httpx.Response(500), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 1, '[OK] settings ({file})\n[OK] Slack: https://xxx.slack.com/\n[OK] git 2.47.0\n', '[ERROR] GitHub answered 500 to GET /user: \n'),
+    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), None, httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 1, '[OK] settings ({file})\n[OK] Slack: https://xxx.slack.com/\n[OK] git 2.47.0\n[OK] GitHub: xxx\n', '[ERROR] No destination is chosen yet\n'),
+    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(404, json = {'message': 'Not Found'}), 1, '[OK] settings ({file})\n[OK] Slack: https://xxx.slack.com/\n[OK] git 2.47.0\n[OK] GitHub: xxx\n', '[ERROR] xxx/xxx does not exist\n'),
+    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': False}), 1, '[OK] settings ({file})\n[OK] Slack: https://xxx.slack.com/\n[OK] git 2.47.0\n[OK] GitHub: xxx\n', '[ERROR] xxx/xxx is public\n')
 ]
 
 STAGES_FAILED = [
-    ({'SLACK_APP_TOKEN': ''}, [{'team_id': 'TXXX', 'url': 'https://xxx.slack.com/'}], ['2.47.0'], '', 'error: Missing required environment variables: SLACK_APP_TOKEN\n'),
-    ({}, slack_sdk.errors.SlackApiError('xxx', 'xxx'), ['2.47.0'], 'ok: settings ({file})\n', 'error: xxx\nThe server responded with: xxx\n'),
-    ({}, [{'team_id': 'TXXX', 'url': 'https://xxx.slack.com/'}], threadvault.vault.repository.GitError('xxx'), 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\n', 'error: xxx\n')
+    ({'SLACK_APP_TOKEN': ''}, [{'team_id': 'TXXX', 'url': 'https://xxx.slack.com/'}], ['2.47.0'], '', '[ERROR] Missing required environment variables: SLACK_APP_TOKEN\n'),
+    ({}, slack_sdk.errors.SlackApiError('xxx', 'xxx'), ['2.47.0'], '[OK] settings ({file})\n', '[ERROR] xxx\nThe server responded with: xxx\n'),
+    ({}, [{'team_id': 'TXXX', 'url': 'https://xxx.slack.com/'}], threadvault.vault.repository.GitError('xxx'), '[OK] settings ({file})\n[OK] Slack: https://xxx.slack.com/\n', '[ERROR] xxx\n')
 ]
 
 TOKENS_SETUP = [
-    (['xoxb-xxx', 'xapp-xxx'], '', 0, 'ok: Slack: https://xxx.slack.com/\n', '', {'SLACK_BOT_TOKEN': 'xoxb-xxx', 'SLACK_APP_TOKEN': 'xapp-xxx'}),
-    (['xapp-xxx', 'xoxb-xxx', 'xoxb-xxx', 'xapp-xxx'], '', 0, 'ok: Slack: https://xxx.slack.com/\n', 'error: SLACK_BOT_TOKEN must be a bot token starting with xoxb-\n', {'SLACK_BOT_TOKEN': 'xoxb-xxx', 'SLACK_APP_TOKEN': 'xapp-xxx'}),
-    (['', '', 'xoxb-xxx', 'xapp-xxx'], '', 0, 'ok: Slack: https://xxx.slack.com/\n', 'error: Missing required environment variables: SLACK_BOT_TOKEN, SLACK_APP_TOKEN\n', {'SLACK_BOT_TOKEN': 'xoxb-xxx', 'SLACK_APP_TOKEN': 'xapp-xxx'}),
-    (['', ''], 'SLACK_BOT_TOKEN=xoxb-xxx\nSLACK_APP_TOKEN=xapp-xxx\n', 0, 'ok: Slack: https://xxx.slack.com/\n', '', {'SLACK_BOT_TOKEN': 'xoxb-xxx', 'SLACK_APP_TOKEN': 'xapp-xxx'}),
-    ([EOFError()], '', 1, '', '\nerror: Setup was stopped\n', {})
+    (['xoxb-xxx', 'xapp-xxx'], '', 0, '[OK] Slack: https://xxx.slack.com/\n', '', {'SLACK_BOT_TOKEN': 'xoxb-xxx', 'SLACK_APP_TOKEN': 'xapp-xxx'}),
+    (['xapp-xxx', 'xoxb-xxx', 'xoxb-xxx', 'xapp-xxx'], '', 0, '[OK] Slack: https://xxx.slack.com/\n', '\n[ERROR] SLACK_BOT_TOKEN must be a bot token starting with xoxb-\n', {'SLACK_BOT_TOKEN': 'xoxb-xxx', 'SLACK_APP_TOKEN': 'xapp-xxx'}),
+    (['', '', 'xoxb-xxx', 'xapp-xxx'], '', 0, '[OK] Slack: https://xxx.slack.com/\n', '\n[ERROR] Missing required environment variables: SLACK_BOT_TOKEN, SLACK_APP_TOKEN\n', {'SLACK_BOT_TOKEN': 'xoxb-xxx', 'SLACK_APP_TOKEN': 'xapp-xxx'}),
+    (['', ''], 'SLACK_BOT_TOKEN=xoxb-xxx\nSLACK_APP_TOKEN=xapp-xxx\n', 0, '[OK] Slack: https://xxx.slack.com/\n', '', {'SLACK_BOT_TOKEN': 'xoxb-xxx', 'SLACK_APP_TOKEN': 'xapp-xxx'}),
+    ([EOFError()], '', 1, '', '\n[ERROR] Setup was stopped\n', {})
 ]
 
 APPS_SETUP = [
     (['', 'xxx', 'xxx'], [None], 'https://github.com/settings/apps/new', '', {'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'}),
-    (['xxx', 'xxx', 'xxx'], [None], 'https://github.com/organizations/xxx/settings/apps/new', '', {'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'}),
-    (['', 'xxx', 'xxx_xxx', 'xxx', 'xxx'], [None], 'https://github.com/settings/apps/new', 'error: GITHUB_APP_SLUG may only contain lower-case letters, digits and hyphens\n', {'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'}),
-    (['', 'xxx', 'xxx', 'xxx', 'xxx'], [threadvault.github.oauth.OAuthError('device_flow_disabled', 'xxx'), None], 'https://github.com/settings/apps/new', 'error: xxx\n', {'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'})
+    (['Y', 'xxx', 'xxx', 'xxx'], [None], 'https://github.com/organizations/xxx/settings/apps/new', '', {'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'}),
+    (['', 'xxx', 'xxx_xxx', 'xxx', 'xxx'], [None], 'https://github.com/settings/apps/new', '\n[ERROR] GITHUB_APP_SLUG may only contain lower-case letters, digits and hyphens\n', {'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'}),
+    (['', 'xxx', 'xxx', 'xxx', 'xxx'], [threadvault.github.oauth.OAuthError('device_flow_disabled', 'xxx'), None], 'https://github.com/settings/apps/new', '\n[ERROR] xxx\n', {'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'})
 ]
 
 OWNERS_SETUP = [
-    (['UXXX2', ''], 'ok: owner: テスト\n', '', {'THREADVAULT_OWNER_ID': 'UXXX2', 'THREADVAULT_ADMIN_IDS': ''}),
-    (['xxx', 'UXXX2', ''], 'ok: owner: テスト\n', 'error: THREADVAULT_OWNER_ID must be one Slack user ID\n', {'THREADVAULT_OWNER_ID': 'UXXX2', 'THREADVAULT_ADMIN_IDS': ''}),
-    (['UXXX1', 'UXXX2', ''], 'ok: owner: テスト\n', 'error: UXXX1 is not a person in the workspace\n', {'THREADVAULT_OWNER_ID': 'UXXX2', 'THREADVAULT_ADMIN_IDS': ''}),
-    (['UXXX2', 'xxx', 'UXXX3,UXXX4'], 'ok: owner: テスト\n', 'error: THREADVAULT_ADMIN_IDS contains invalid Slack user IDs: xxx\n', {'THREADVAULT_OWNER_ID': 'UXXX2', 'THREADVAULT_ADMIN_IDS': 'UXXX3,UXXX4'})
+    (['UXXX2'], '[OK] owner: テスト\n', '', {'THREADVAULT_OWNER_ID': 'UXXX2'}),
+    (['xxx', 'UXXX2'], '[OK] owner: テスト\n', '\n[ERROR] THREADVAULT_OWNER_ID must be one Slack user ID\n', {'THREADVAULT_OWNER_ID': 'UXXX2'}),
+    (['UXXX1', 'UXXX2'], '[OK] owner: テスト\n', '\n[ERROR] UXXX1 is not a person in the workspace\n', {'THREADVAULT_OWNER_ID': 'UXXX2'})
 ]
 
 DESTINATIONS_SETUP = [
-    ([], 'xxx/xxx', 'ok: git 2.47.0\nnext: with the Slack app running, connect GitHub and choose the destination in App Home\n'),
-    ([TOKENS_SAVED], None, 'ok: GitHub: xxx\nnext: with the Slack app running, choose the destination in App Home\n'),
-    ([TOKENS_SAVED], 'xxx/xxx', 'ok: GitHub: xxx\nok: destination: xxx/xxx\n')
+    ([], 'xxx/xxx', '[OK] git 2.47.0\n[NEXT] once the Slack app is running, connect GitHub and choose the destination in its App Home\n'),
+    ([TOKENS_SAVED], None, '[OK] GitHub: xxx\n[NEXT] once the Slack app is running, choose the destination in its App Home\n'),
+    ([TOKENS_SAVED], 'xxx/xxx', '[OK] GitHub: xxx\n[OK] destination: xxx/xxx\n')
 ]
 
 PLATFORMS_SETUP = [
-    (frozenset({sys.platform}), [''], 'ok: autostart: xxx\n', 1),
-    (frozenset({sys.platform}), ['no'], "next: run 'threadvault start' to start the Slack app\n", 0),
-    (frozenset[str](), [], "next: run 'threadvault start' to start the Slack app\n", 0)
+    (frozenset({sys.platform}), [''], '[OK] autostart: xxx\n\n', 1),
+    (frozenset({sys.platform}), ['yes'], '[OK] autostart: xxx\n\n', 1),
+    (frozenset({sys.platform}), ['no'], "[NEXT] run 'threadvault start' to start the Slack app\n\n", 0),
+    (frozenset[str](), [], "[NEXT] run 'threadvault start' to start the Slack app\n\n", 0)
 ]
+
+LAYOUT_SETUP = """
+ThreadVault (Version: {version})
+
+Open the link below to create the Slack app. Its settings are filled in from the manifest.
+
+>> http://127.0.0.1:0/slack
+
+1. Choose the workspace, then follow the pages to create the app.
+2. Choose Install to Workspace and allow the access the app asks for.
+3. In OAuth & Permissions, copy the Bot User OAuth Token (it starts with xoxb-).
+4. In Basic Information, under App-Level Tokens, generate a token with the connections:write scope and copy it (it starts with xapp-).
+
+Paste the Bot User OAuth Token and the App-Level Token. They stay hidden as you type.
+
+Bot User OAuth Token:
+App-Level Token:
+
+[OK] Slack: https://xxx.slack.com/
+
+Keep the vault in a GitHub organisation instead of your personal account? [y/N]:
+
+Open the link below to register the GitHub App. Its settings are filled in.
+
+>> http://127.0.0.1:0/github
+
+1. Tick Enable Device Flow.
+2. Choose Create GitHub App, then copy the Client ID.
+3. Copy the app slug: the last part of the public link, https://github.com/apps/<slug>.
+4. Choose Install App and install it on the account that keeps the vault.
+
+Paste the Client ID and the app slug.
+
+Client ID:
+App slug:
+
+[OK] GitHub App: xxx
+
+Choose who owns ThreadVault in Slack, and copy their member ID.
+
+1. In Slack, open their profile.
+2. Choose ⋮ (More), then Copy member ID.
+
+Member ID of the owner:
+
+[OK] owner: テスト
+
+[OK] settings ({file})
+[OK] Slack: https://xxx.slack.com/
+[OK] git 2.47.0
+[NEXT] once the Slack app is running, connect GitHub and choose the destination in its App Home
+
+Start the Slack app automatically when you log in? [Y/n]:
+
+[NEXT] run 'threadvault start' to start the Slack app
+
+"""
 
 def answer(
     monkeypatch: pytest.MonkeyPatch,
@@ -100,7 +160,7 @@ def answer(
     tokens: collections.abc.Sequence[str | Exception] = ('xoxb-xxx', 'xapp-xxx'),
     apps: collections.abc.Sequence[str | Exception] = ('', 'xxx', 'xxx'),
     codes: collections.abc.Sequence[Exception | None] = (None,),
-    owners: collections.abc.Sequence[str | Exception] = ('UXXX2', ''),
+    owners: collections.abc.Sequence[str | Exception] = ('UXXX2',),
     starts: collections.abc.Sequence[str | Exception] = ('no',)
 ) -> tuple[unittest.mock.Mock, unittest.mock.Mock]:
 
@@ -112,6 +172,15 @@ def answer(
     monkeypatch.setattr(threadvault.github.oauth, 'request', request)
 
     return browse, request
+
+def extract(
+    out: str,
+    line: str
+) -> str:
+
+    lines = out.splitlines()
+
+    return lines[lines.index(line) + 2].removeprefix('>> ')
 
 def test_terminal_version(
     capsys: pytest.CaptureFixture[str]
@@ -179,7 +248,7 @@ class TestTerminalCommandBackup:
         monkeypatch.setenv('SLACK_BOT_TOKEN', '')
 
         assert threadvault.terminal.main(['backup', '--out', 'xxx']) == 1
-        assert capsys.readouterr() == ('', 'error: Missing required environment variables: SLACK_BOT_TOKEN\n')
+        assert capsys.readouterr() == ('', '[ERROR] Missing required environment variables: SLACK_BOT_TOKEN\n')
 
     def test_repository(
         self,
@@ -202,7 +271,7 @@ class TestTerminalCommandBackup:
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
 
         assert threadvault.terminal.main(['backup', '--repo', 'xxx/xxx']) == 1
-        assert capsys.readouterr() == ('', 'error: GitHub is not connected yet\n')
+        assert capsys.readouterr() == ('', '[ERROR] GitHub is not connected yet\n')
 
     def test_lock(
         self,
@@ -227,7 +296,7 @@ class TestTerminalCommandBackup:
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
 
         with threadvault.backup.runner.hold(directory): assert threadvault.terminal.main(['backup', '--repo', 'xxx/xxx']) == 1
-        assert capsys.readouterr() == ('', f'error: Another backup is already writing {directory}\n')
+        assert capsys.readouterr() == ('', f'[ERROR] Another backup is already writing {directory}\n')
 
     def test_configuration(
         self,
@@ -285,7 +354,7 @@ class TestTerminalCommandConnect:
         try: saved = [json.loads(cipher.decrypt(row['credential_data']))['access_token'] for row in database.connect().execute('SELECT credential_data FROM github')]
         finally: database.close()
 
-        assert capsys.readouterr() == ('Open https://github.com/login/device and enter XXXX-XXXX\nConnected to GitHub as xxx\n', '')
+        assert capsys.readouterr() == ('Open https://github.com/login/device and enter XXXX-XXXX\n[OK] GitHub: xxx\n', '')
         assert saved == ['ghu_xxx']
 
     def test_failure(
@@ -297,7 +366,7 @@ class TestTerminalCommandConnect:
         monkeypatch.setenv('GITHUB_APP_CLIENT_ID', '')
 
         assert threadvault.terminal.main(['connect']) == 1
-        assert capsys.readouterr() == ('', 'error: Missing required environment variables: GITHUB_APP_CLIENT_ID\n')
+        assert capsys.readouterr() == ('', '[ERROR] Missing required environment variables: GITHUB_APP_CLIENT_ID\n')
 
 class TestTerminalCommandStart:
 
@@ -368,7 +437,7 @@ class TestTerminalCommandStart:
         monkeypatch.setattr(threadvault.slack.application, 'start', unittest.mock.Mock())
 
         with threadvault.slack.application.lock(tmp_path): assert threadvault.terminal.main(['start']) == 1
-        assert capsys.readouterr() == ('', f'error: {threadvault.product.NAME} is already running with the data directory {tmp_path}\n')
+        assert capsys.readouterr() == ('', f'[ERROR] {threadvault.product.NAME} is already running with the data directory {tmp_path}\n')
 
     def test_log(
         self,
@@ -403,7 +472,7 @@ class TestTerminalCommandStart:
 
         assert threadvault.terminal.main(['start', '--log', str(log)]) == 0
         assert capsys.readouterr() == ('', '')
-        assert log.read_text(encoding = 'utf-8') == 'error: Missing required environment variables: SLACK_APP_TOKEN\nxoxb-xxx\n'
+        assert log.read_text(encoding = 'utf-8') == '[ERROR] Missing required environment variables: SLACK_APP_TOKEN\nxoxb-xxx\n'
 
 class TestTerminalCommandManifest:
 
@@ -533,6 +602,13 @@ class TestTerminalCommandSetup:
 
             return slack
 
+        def shorten(
+            _: str,
+            address: str
+        ) -> str:
+
+            return address
+
         manifest = json.loads(importlib.resources.files('threadvault.slack').joinpath('manifest.json').read_text(encoding = 'utf-8'))
 
         if saved:
@@ -542,13 +618,15 @@ class TestTerminalCommandSetup:
 
         monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+        monkeypatch.setattr(threadvault.shortener.Shortener, 'shorten', staticmethod(shorten))
         browse, _ = answer(monkeypatch, tokens = tokens)
 
         assert threadvault.terminal.main(['setup']) == status
 
         captured = capsys.readouterr()
-        url: str = browse.call_args_list[0].args[0]
+        url = extract(captured.out, 'Open the link below to create the Slack app. Its settings are filled in from the manifest.')
 
+        assert not browse.called
         assert out in captured.out
         assert captured.err == err
         assert json.loads(urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)['manifest_json'][0]) == manifest
@@ -575,7 +653,7 @@ class TestTerminalCommandSetup:
         answer(monkeypatch, tokens = ['xoxb-xxx', 'xapp-xxx1', 'xoxb-xxx', 'xapp-xxx2'])
 
         assert threadvault.terminal.main(['setup']) == 0
-        assert capsys.readouterr().err == 'error: xxx\nThe server responded with: xxx\n'
+        assert capsys.readouterr().err == '\n[ERROR] xxx\nThe server responded with: xxx\n'
         assert dotenv.dotenv_values(configuration)['SLACK_APP_TOKEN'] == 'xapp-xxx2'
 
     @pytest.mark.parametrize(('apps', 'codes', 'page', 'err', 'written'), APPS_SETUP)
@@ -599,18 +677,26 @@ class TestTerminalCommandSetup:
 
             return slack
 
+        def shorten(
+            _: str,
+            address: str
+        ) -> str:
+
+            return address
+
         monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+        monkeypatch.setattr(threadvault.shortener.Shortener, 'shorten', staticmethod(shorten))
         browse, request = answer(monkeypatch, apps = apps, codes = codes)
 
         assert threadvault.terminal.main(['setup']) == 0
 
         captured = capsys.readouterr()
-        address: str = browse.call_args_list[1].args[0]
-        url = urllib.parse.urlsplit(address)
+        url = urllib.parse.urlsplit(extract(captured.out, 'Open the link below to register the GitHub App. Its settings are filled in.'))
 
+        assert not browse.called
         assert captured.err == err
-        assert 'ok: GitHub App: xxx\n' in captured.out
+        assert '[OK] GitHub App: xxx\n' in captured.out
         assert f'{url.scheme}://{url.netloc}{url.path}' == page
         assert urllib.parse.parse_qs(url.query) == {'name': ['ThreadVault for xxx'], 'url': ['https://xxx.slack.com/'], 'public': ['false'], 'webhook_active': ['false'], 'contents': ['write'], 'administration': ['write'], 'metadata': ['read']}
         assert request.call_args_list == [unittest.mock.call('xxx')] * len(codes)
@@ -665,10 +751,10 @@ class TestTerminalCommandSetup:
         monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
         monkeypatch.setattr(slack, 'users_info', unittest.mock.Mock(side_effect = [{'user': {'id': 'UXXX9', 'is_bot': True}}, {'user': {'id': 'UXXX2', 'name': 'xxx'}}]))
-        answer(monkeypatch, owners = ['UXXX9', 'UXXX2', ''])
+        answer(monkeypatch, owners = ['UXXX9', 'UXXX2'])
 
         assert threadvault.terminal.main(['setup']) == 0
-        assert capsys.readouterr().err == 'error: UXXX9 is not a person in the workspace\n'
+        assert capsys.readouterr().err == '\n[ERROR] UXXX9 is not a person in the workspace\n'
 
     @pytest.mark.parametrize(('tokens', 'repository', 'out'), DESTINATIONS_SETUP)
     def test_check(
@@ -775,5 +861,94 @@ class TestTerminalCommandSetup:
         answer(monkeypatch, starts = [''])
 
         assert threadvault.terminal.main(['setup']) == 1
-        assert capsys.readouterr().err == 'error: xxx\n'
+        assert capsys.readouterr().err == '[ERROR] xxx\n'
         assert not register.called
+
+    def test_link(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        slack: slack_sdk.web.WebClient
+    ) -> None:
+
+        def connect(
+            _: str
+        ) -> slack_sdk.web.WebClient:
+
+            return slack
+
+        monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
+        monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+        answer(monkeypatch)
+
+        assert threadvault.terminal.main(['setup']) == 0
+
+        captured = capsys.readouterr()
+
+        assert re.fullmatch(r'http://127\.0\.0\.1:[0-9]+/slack', extract(captured.out, 'Open the link below to create the Slack app. Its settings are filled in from the manifest.'))
+        assert re.fullmatch(r'http://127\.0\.0\.1:[0-9]+/github', extract(captured.out, 'Open the link below to register the GitHub App. Its settings are filled in.'))
+        assert captured.err == ''
+
+    def test_warning(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        slack: slack_sdk.web.WebClient
+    ) -> None:
+
+        def connect(
+            _: str
+        ) -> slack_sdk.web.WebClient:
+
+            return slack
+
+        monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
+        monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+        monkeypatch.setattr(wsgiref.simple_server, 'make_server', unittest.mock.Mock(side_effect = OSError('xxx')))
+        answer(monkeypatch)
+
+        assert threadvault.terminal.main(['setup']) == 0
+
+        captured = capsys.readouterr()
+
+        assert captured.err == '\n[WARNING] Short links are not available on this computer (xxx), so the full addresses follow\n'
+        assert extract(captured.out, 'Open the link below to create the Slack app. Its settings are filled in from the manifest.').startswith('https://api.slack.com/apps?new_app=1&manifest_json=')
+        assert extract(captured.out, 'Open the link below to register the GitHub App. Its settings are filled in.').startswith('https://github.com/settings/apps/new?')
+
+    def test_layout(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        slack: slack_sdk.web.WebClient,
+        configuration: pathlib.Path
+    ) -> None:
+
+        answers = ['xoxb-xxx', 'xapp-xxx', '', 'xxx', 'xxx', 'UXXX2', 'no']
+
+        def connect(
+            _: str
+        ) -> slack_sdk.web.WebClient:
+
+            return slack
+
+        def enter(
+            prompt: str
+        ) -> str:
+
+            sys.stdout.write(f'{prompt.rstrip()}\n')
+
+            return answers.pop(0)
+
+        monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
+        monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+        monkeypatch.setattr(getpass, 'getpass', enter)
+        monkeypatch.setattr(builtins, 'input', enter)
+        monkeypatch.setattr(threadvault.github.oauth, 'request', unittest.mock.Mock())
+        monkeypatch.setattr(threadvault.vault.repository, 'verify', unittest.mock.Mock(return_value = '2.47.0'))
+        monkeypatch.setattr(threadvault.autostart, 'PLATFORMS', frozenset({sys.platform}))
+
+        assert threadvault.terminal.main(['setup']) == 0
+        assert re.sub(r'http://127\.0\.0\.1:[0-9]+/', 'http://127.0.0.1:0/', capsys.readouterr().out) == LAYOUT_SETUP.format(version = threadvault.product.VERSION, file = configuration)
