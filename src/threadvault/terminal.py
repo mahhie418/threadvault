@@ -71,6 +71,7 @@ def _build() -> argparse.ArgumentParser:
     connection.set_defaults(handler = _connect)
     start = commands.add_parser('start', help = 'run the Slack app until it is stopped')
     start.set_defaults(handler = _start)
+    start.add_argument('--log', type = pathlib.Path, help = 'file to append the output to', metavar = 'FILE')
     manifest = commands.add_parser('manifest', help = 'print the manifest for creating the Slack app')
     manifest.set_defaults(handler = _manifest)
     doctor = commands.add_parser('doctor', help = 'check the settings, Slack, git, GitHub and the destination')
@@ -166,8 +167,18 @@ def _connect(
     return 0
 
 def _start(
-    _: argparse.Namespace
+    namespace: argparse.Namespace
 ) -> int:
+
+    log: pathlib.Path | None = namespace.log
+
+    if log is None: return _serve()
+
+    log.parent.mkdir(parents = True, exist_ok = True)
+
+    with log.open('a', encoding = 'utf-8', buffering = 1) as file, contextlib.redirect_stdout(file), contextlib.redirect_stderr(file): return _serve()
+
+def _serve() -> int:
 
     try:
 

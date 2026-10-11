@@ -1,4 +1,4 @@
-"""Start of the Slack app at login: a launchd agent on macOS."""
+"""Start of the Slack app at login: a launchd agent on macOS and a scheduled task on Windows."""
 
 import importlib.resources
 import os
@@ -9,7 +9,7 @@ import xml.sax.saxutils
 
 LABEL = 'threadvault'
 
-PLATFORMS = frozenset({'darwin'})
+PLATFORMS = frozenset({'darwin', 'win32'})
 
 class AutostartError(Exception):
 
@@ -23,7 +23,10 @@ def register(
 
     On macOS, a launchd agent of the user runs the Slack app with the Python
     of this installation and the PATH of the current process, so that it
-    finds git, and appends the output to the log.
+    finds git, and appends the output to the log. On Windows, a scheduled
+    task of the user runs it with the windowless Python of this installation,
+    from a task file next to the log, and the Slack app appends its output to
+    the log itself.
 
     Args:
         log: File for the output of the Slack app.
@@ -37,6 +40,7 @@ def register(
     """
 
     if sys.platform == 'darwin': return _launch(log, os.getuid())
+    if sys.platform == 'win32': return _schedule(log)
 
     raise AutostartError(f'Starting at login is not supported on {sys.platform}')
 
@@ -55,6 +59,21 @@ def _launch(
     except subprocess.CalledProcessError as error: raise AutostartError(f'launchd refused {agent}: {error.stderr.strip()}') from None
 
     return str(agent)
+
+def _schedule(
+    log: pathlib.Path
+) -> str:
+
+    task = pathlib.Path(os.path.join(log.parent, f'{LABEL}.xml'))
+    task.parent.mkdir(parents = True, exist_ok = True)
+    task.write_text(_fill('task.xml', user = f"{os.environ.get('USERDOMAIN', '')}\\{os.environ.get('USERNAME', '')}", python = str(pathlib.Path(sys.executable).with_name('pythonw.exe')), module = __name__.partition('.')[0], log = subprocess.list2cmdline([str(log)])), encoding = 'utf-16')
+
+    command = os.path.join(os.environ.get('SYSTEMROOT', 'C:\\Windows'), 'System32', 'schtasks.exe')
+
+    try: subprocess.run([command, '/Create', '/TN', LABEL, '/XML', str(task), '/F'], capture_output = True, encoding = 'utf-8', errors = 'replace', check = True)
+    except subprocess.CalledProcessError as error: raise AutostartError(f'Task Scheduler refused {task}: {error.stderr.strip()}') from None
+
+    return str(task)
 
 def _fill(
     name: str,

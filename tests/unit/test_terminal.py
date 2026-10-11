@@ -370,6 +370,41 @@ class TestTerminalCommandStart:
         with threadvault.slack.application.lock(tmp_path): assert threadvault.terminal.main(['start']) == 1
         assert capsys.readouterr() == ('', f'error: {threadvault.product.NAME} is already running with the data directory {tmp_path}\n')
 
+    def test_log(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        slack: slack_sdk.web.WebClient
+    ) -> None:
+
+        log = pathlib.Path(os.path.join(tmp_path, 'xxx', 'xxx.log'))
+
+        def connect(
+            token: str
+        ) -> slack_sdk.web.WebClient:
+
+            sys.stdout.write(f'{token}\n')
+
+            return slack
+
+        monkeypatch.setenv('SLACK_BOT_TOKEN', 'xoxb-xxx')
+        monkeypatch.setenv('THREADVAULT_OWNER_ID', 'UXXX1')
+        monkeypatch.setenv('GITHUB_APP_CLIENT_ID', 'xxx')
+        monkeypatch.setenv('GITHUB_APP_SLUG', 'xxx')
+        monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
+        monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+        monkeypatch.setattr(threadvault.slack.application, 'start', unittest.mock.Mock(side_effect = KeyboardInterrupt))
+        monkeypatch.setenv('SLACK_APP_TOKEN', '')
+
+        assert threadvault.terminal.main(['start', '--log', str(log)]) == 1
+
+        monkeypatch.setenv('SLACK_APP_TOKEN', 'xapp-xxx')
+
+        assert threadvault.terminal.main(['start', '--log', str(log)]) == 0
+        assert capsys.readouterr() == ('', '')
+        assert log.read_text(encoding = 'utf-8') == 'error: Missing required environment variables: SLACK_APP_TOKEN\nxoxb-xxx\n'
+
 class TestTerminalCommandManifest:
 
     def test_manifest(
