@@ -77,13 +77,14 @@ def transcribe(
     """Writes the Markdown of a channel, one file a month.
 
     A message goes to the file of the month in which it was posted, in
-    `timezone`, under a heading for its day. Thread replies follow their
-    parent, whenever they were posted; a reply whose parent is not given
-    stands on its own. Each message links to Slack, and so does each of its
-    attached files, unless the vault holds a copy to link to instead. Each
-    file holds the given messages of its month and replaces the file that was
-    there, and the file of a month without messages is removed, so give every
-    message of the channel.
+    `timezone`, under a heading for its day. Times show their offset from
+    UTC, which tells apart the hour that repeats when daylight saving time
+    ends. Thread replies follow their parent, whenever they were posted; a
+    reply whose parent is not given stands on its own. Each message links to
+    Slack, and so does each of its attached files, unless the vault holds a
+    copy to link to instead. Each file holds the given messages of its month
+    and replaces the file that was there, and the file of a month without
+    messages is removed, so give every message of the channel.
 
     Args:
         directory: Directory of the channel among the Markdown files.
@@ -263,7 +264,7 @@ def _render(
 ) -> list[str]:
 
     time = _localise(message, zone)
-    label = time.strftime('%H:%M' if time.date() == day else '%Y-%m-%d %H:%M')
+    label = time.strftime('%H:%M %:z' if time.date() == day else '%Y-%m-%d %H:%M %:z')
     link = f'{url.rstrip('/')}/archives/{channel}/p{typing.cast(str, message['ts']).replace('.', '')}'
     author = names.get(message.get('user', '')) or message.get('username') or message.get('user') or message.get('bot_id', '')
     text = convert(message.get('text', ''), names)

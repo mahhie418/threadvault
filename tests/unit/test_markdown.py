@@ -94,7 +94,17 @@ def test_markdown_message_time(
     reply = next(index for index, line in enumerate(lines) if line.startswith('####'))
 
     assert lines.index('## 2017-11-17 (Fri)') < reply
-    assert lines[reply].startswith('#### [2026-10-04 00:00]')
+    assert lines[reply].startswith('#### [2026-10-04 00:00 +00:00]')
+
+def test_markdown_message_offset(
+    tmp_path: pathlib.Path
+) -> None:
+
+    render(tmp_path, [{'text': 'xxx', 'ts': '1792888200.000000', 'user': 'UXXX2'}, {'text': 'xxx', 'ts': '1792891800.000000', 'user': 'UXXX2'}], 'Europe/London', 'en')
+    lines = pathlib.Path(os.path.join(tmp_path, '2026-10.md')).read_text(encoding = 'utf-8').splitlines()
+
+    assert lines[4].startswith('### [01:30 +01:00]')
+    assert lines[8].startswith('### [01:30 +00:00]')
 
 def test_markdown_message_removal(
     tmp_path: pathlib.Path
@@ -124,7 +134,7 @@ def test_markdown_reply_orphan(
     render(tmp_path, [{'text': 'xxx', 'thread_ts': '1700006399.000000', 'ts': '1700006400.000000', 'user': 'UXXX2'}], 'UTC', 'en')
     lines = pathlib.Path(os.path.join(tmp_path, '2023-11.md')).read_text(encoding = 'utf-8').splitlines()
 
-    assert lines[4].startswith('### [00:00]')
+    assert lines[4].startswith('### [00:00 +00:00]')
 
 def test_markdown_file_link(
     tmp_path: pathlib.Path
