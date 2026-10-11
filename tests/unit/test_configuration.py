@@ -38,15 +38,10 @@ ENVIRONMENT_INVALID = [
 
 @pytest.fixture
 def isolated(
-    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch
-) -> pathlib.Path:
-
-    monkeypatch.chdir(tmp_path)
+) -> None:
 
     for name in [name for name in os.environ if name.startswith(PREFIXES)]: monkeypatch.delenv(name)
-
-    return tmp_path
 
 def test_configuration_values_default() -> None:
 
@@ -123,24 +118,40 @@ def test_configuration_directory_relative(
 
     assert settings.threadvault_data_directory == expected
 
-def test_configuration_dotenv_reading(
-    isolated: pathlib.Path
-) -> None:
-
-    file = pathlib.Path(os.path.join(isolated, '.env'))
-    file.write_text('THREADVAULT_LANGUAGE_DISPLAY=ja\n', encoding = 'utf-8')
-
-    settings = threadvault.configuration.load()
-
-    assert settings.threadvault_language_display == 'ja'
-
-def test_configuration_dotenv_override(
-    isolated: pathlib.Path,
+def test_configuration_file_location(
     monkeypatch: pytest.MonkeyPatch
 ) -> None:
 
-    file = pathlib.Path(os.path.join(isolated, '.env'))
-    file.write_text('THREADVAULT_LOOKBACK_DAYS=0\n', encoding = 'utf-8')
+    monkeypatch.undo()
+    expected = pathlib.Path(os.path.join(platformdirs.user_config_path(threadvault.product.NAME, appauthor = False), 'threadvault.env'))
+
+    assert threadvault.configuration.locate() == expected
+
+@pytest.mark.usefixtures('isolated')
+def test_configuration_file_reading(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    configuration: pathlib.Path
+) -> None:
+
+    configuration.parent.mkdir()
+    configuration.write_text('THREADVAULT_LANGUAGE_DISPLAY=ja\n', encoding = 'utf-8')
+    pathlib.Path(os.path.join(tmp_path, '.env')).write_text('THREADVAULT_LOOKBACK_DAYS=7\n', encoding = 'utf-8')
+
+    monkeypatch.chdir(tmp_path)
+    settings = threadvault.configuration.load()
+
+    assert settings.threadvault_language_display == 'ja'
+    assert settings.threadvault_lookback_days == threadvault.configuration.LOOKBACK_DAYS_DEFAULT
+
+@pytest.mark.usefixtures('isolated')
+def test_configuration_file_override(
+    monkeypatch: pytest.MonkeyPatch,
+    configuration: pathlib.Path
+) -> None:
+
+    configuration.parent.mkdir()
+    configuration.write_text('THREADVAULT_LOOKBACK_DAYS=0\n', encoding = 'utf-8')
 
     monkeypatch.setenv('THREADVAULT_LOOKBACK_DAYS', '90')
     settings = threadvault.configuration.load()
@@ -148,7 +159,7 @@ def test_configuration_dotenv_override(
     assert settings.threadvault_lookback_days == 90
 
 @pytest.mark.usefixtures('isolated')
-def test_configuration_dotenv_missing(
+def test_configuration_file_missing(
     monkeypatch: pytest.MonkeyPatch
 ) -> None:
 

@@ -1,4 +1,4 @@
-"""Configuration read from environment variables and an optional .env file."""
+"""Configuration read from environment variables and the settings file of the user."""
 
 import collections.abc
 import dataclasses
@@ -15,6 +15,8 @@ import threadvault.product
 
 type Language = typing.Literal['en', 'ja']
 type FieldRequired = typing.Literal['slack_bot_token', 'slack_app_token', 'github_app_client_id', 'github_app_slug', 'threadvault_owner_id', 'threadvault_admin_ids']
+
+SETTINGS_FILE = 'threadvault.env'
 
 _PATTERN_GITHUB_APP_CLIENT_ID = re.compile(r'[A-Za-z0-9.]+')
 _PATTERN_GITHUB_APP_SLUG = re.compile(r'[a-z0-9][a-z0-9-]*')
@@ -95,7 +97,7 @@ def load(
     Args:
         environment: Environment variables to build the settings from.
                      When None, the process environment is used, layered over
-                     a .env file in the current directory if there is one.
+                     the settings file if there is one.
 
     Returns:
         The validated settings.
@@ -130,9 +132,15 @@ def load(
         threadvault_deletions_maximum = _parse('THREADVAULT_DELETIONS_MAXIMUM', environment, category = 'integer', default = None, minimum = 0)
     )
 
+def locate() -> pathlib.Path:
+
+    """Returns the path of the settings file in the configuration directory of the user."""
+
+    return pathlib.Path(os.path.join(platformdirs.user_config_path(threadvault.product.NAME, appauthor = False), SETTINGS_FILE))
+
 def _read() -> dict[str, str]:
 
-    values = {key: value for key, value in dotenv.dotenv_values('.env').items() if value is not None}
+    values = {key: value for key, value in dotenv.dotenv_values(locate()).items() if value is not None}
 
     return {**values, **os.environ}
 

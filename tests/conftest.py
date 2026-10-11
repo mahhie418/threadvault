@@ -10,6 +10,8 @@ import typing
 import pytest
 import slack_sdk
 
+import threadvault.configuration
+
 class Slack(slack_sdk.web.WebClient):
 
     def __init__(
@@ -92,6 +94,17 @@ def remote(
     execute('push', '--quiet', 'origin', 'HEAD:main', directory = seed)
 
     return path
+
+@pytest.fixture(autouse = True)
+def configuration(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch
+) -> pathlib.Path:
+
+    file = pathlib.Path(os.path.join(tmp_path, 'configuration', threadvault.configuration.SETTINGS_FILE))
+    monkeypatch.setattr(threadvault.configuration, 'locate', lambda: file)
+
+    return file
 
 def execute(
     *arguments: str,

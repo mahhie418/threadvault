@@ -194,7 +194,7 @@ def _doctor(
         settings = threadvault.configuration.load()
         settings.require('slack_bot_token', 'slack_app_token', 'threadvault_owner_id', 'github_app_client_id', 'github_app_slug')
 
-        print('ok: settings')
+        print(f'ok: settings ({threadvault.configuration.locate()})')
 
         identity = threadvault.slack.api.connect(settings.slack_bot_token).auth_test()
 

@@ -38,18 +38,18 @@ TOKENS_SAVED = threadvault.github.oauth.Tokens(access_token = 'ghu_xxx', access_
 ENVIRONMENT_DOCTOR = {'SLACK_BOT_TOKEN': 'xoxb-xxx', 'SLACK_APP_TOKEN': 'xapp-xxx', 'THREADVAULT_OWNER_ID': 'UXXX1', 'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'}
 
 DESTINATIONS_CHECKED = [
-    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 0, 'ok: settings\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\nok: GitHub: xxx\nok: destination: xxx/xxx\n', ''),
-    ([], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 1, 'ok: settings\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\n', 'error: GitHub is not connected yet\n'),
-    ([TOKENS_SAVED], httpx.Response(500), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 1, 'ok: settings\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\n', 'error: GitHub answered 500 to GET /user: \n'),
-    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), None, httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 1, 'ok: settings\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\nok: GitHub: xxx\n', 'error: No destination is chosen yet\n'),
-    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(404, json = {'message': 'Not Found'}), 1, 'ok: settings\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\nok: GitHub: xxx\n', 'error: xxx/xxx does not exist\n'),
-    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': False}), 1, 'ok: settings\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\nok: GitHub: xxx\n', 'error: xxx/xxx is public\n')
+    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 0, 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\nok: GitHub: xxx\nok: destination: xxx/xxx\n', ''),
+    ([], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 1, 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\n', 'error: GitHub is not connected yet\n'),
+    ([TOKENS_SAVED], httpx.Response(500), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 1, 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\n', 'error: GitHub answered 500 to GET /user: \n'),
+    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), None, httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': True}), 1, 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\nok: GitHub: xxx\n', 'error: No destination is chosen yet\n'),
+    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(404, json = {'message': 'Not Found'}), 1, 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\nok: GitHub: xxx\n', 'error: xxx/xxx does not exist\n'),
+    ([TOKENS_SAVED], httpx.Response(200, json = {'login': 'xxx'}), 'xxx/xxx', httpx.Response(200, json = {'full_name': 'xxx/xxx', 'private': False}), 1, 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\nok: git 2.47.0\nok: GitHub: xxx\n', 'error: xxx/xxx is public\n')
 ]
 
 STAGES_FAILED = [
     ({'SLACK_APP_TOKEN': ''}, [{'team_id': 'TXXX', 'url': 'https://xxx.slack.com/'}], ['2.47.0'], '', 'error: Missing required environment variables: SLACK_APP_TOKEN\n'),
-    ({}, slack_sdk.errors.SlackApiError('xxx', 'xxx'), ['2.47.0'], 'ok: settings\n', 'error: xxx\nThe server responded with: xxx\n'),
-    ({}, [{'team_id': 'TXXX', 'url': 'https://xxx.slack.com/'}], threadvault.vault.repository.GitError('xxx'), 'ok: settings\nok: Slack: https://xxx.slack.com/\n', 'error: xxx\n')
+    ({}, slack_sdk.errors.SlackApiError('xxx', 'xxx'), ['2.47.0'], 'ok: settings ({file})\n', 'error: xxx\nThe server responded with: xxx\n'),
+    ({}, [{'team_id': 'TXXX', 'url': 'https://xxx.slack.com/'}], threadvault.vault.repository.GitError('xxx'), 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\n', 'error: xxx\n')
 ]
 
 def test_terminal_version(
@@ -134,7 +134,6 @@ class TestTerminalCommandBackup:
 
             return slack
 
-        monkeypatch.chdir(tmp_path)
         monkeypatch.setenv('SLACK_BOT_TOKEN', 'xoxb-xxx')
         monkeypatch.setenv('GITHUB_APP_CLIENT_ID', 'xxx')
         monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
@@ -160,7 +159,6 @@ class TestTerminalCommandBackup:
 
             return slack
 
-        monkeypatch.chdir(tmp_path)
         monkeypatch.setenv('SLACK_BOT_TOKEN', 'xoxb-xxx')
         monkeypatch.setenv('GITHUB_APP_CLIENT_ID', 'xxx')
         monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
@@ -208,7 +206,6 @@ class TestTerminalCommandConnect:
 
         key = threadvault.encryption.generate()
 
-        monkeypatch.chdir(tmp_path)
         monkeypatch.setenv('GITHUB_APP_CLIENT_ID', 'xxx')
         monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
         monkeypatch.setenv('THREADVAULT_SECRET_KEY', key)
@@ -232,12 +229,10 @@ class TestTerminalCommandConnect:
 
     def test_failure(
         self,
-        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str]
     ) -> None:
 
-        monkeypatch.chdir(tmp_path)
         monkeypatch.setenv('GITHUB_APP_CLIENT_ID', '')
 
         assert threadvault.terminal.main(['connect']) == 1
@@ -277,7 +272,6 @@ class TestTerminalCommandStart:
 
             raise KeyboardInterrupt
 
-        monkeypatch.chdir(tmp_path)
         monkeypatch.setenv('SLACK_BOT_TOKEN', 'xoxb-xxx')
         monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
@@ -303,7 +297,6 @@ class TestTerminalCommandStart:
 
             return slack
 
-        monkeypatch.chdir(tmp_path)
         monkeypatch.setenv('SLACK_BOT_TOKEN', 'xoxb-xxx')
         monkeypatch.setenv('SLACK_APP_TOKEN', 'xapp-xxx')
         monkeypatch.setenv('THREADVAULT_OWNER_ID', 'UXXX1')
@@ -344,6 +337,7 @@ class TestTerminalCommandDoctor:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
         slack: slack_sdk.web.WebClient,
+        configuration: pathlib.Path,
         tokens: list[threadvault.github.oauth.Tokens],
         user: httpx.Response,
         repository: str | None,
@@ -372,7 +366,6 @@ class TestTerminalCommandDoctor:
 
             database.close()
 
-        monkeypatch.chdir(tmp_path)
         monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
         monkeypatch.setenv('THREADVAULT_SECRET_KEY', key)
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
@@ -387,7 +380,7 @@ class TestTerminalCommandDoctor:
 
             assert threadvault.terminal.main(['doctor']) == status
 
-        assert capsys.readouterr() == (out, err)
+        assert capsys.readouterr() == (out.format(file = configuration), err)
 
     @pytest.mark.parametrize(('environment', 'identity', 'version', 'out', 'err'), STAGES_FAILED)
     def test_stage(
@@ -396,6 +389,7 @@ class TestTerminalCommandDoctor:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
         slack: slack_sdk.web.WebClient,
+        configuration: pathlib.Path,
         environment: dict[str, str],
         identity: list[dict[str, str]] | Exception,
         version: list[str] | Exception,
@@ -409,7 +403,6 @@ class TestTerminalCommandDoctor:
 
             return slack
 
-        monkeypatch.chdir(tmp_path)
         monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
         monkeypatch.setattr(slack, 'auth_test', unittest.mock.Mock(side_effect = identity))
@@ -418,4 +411,4 @@ class TestTerminalCommandDoctor:
         for name, value in (ENVIRONMENT_DOCTOR | environment).items(): monkeypatch.setenv(name, value)
 
         assert threadvault.terminal.main(['doctor']) == 1
-        assert capsys.readouterr() == (out, err)
+        assert capsys.readouterr() == (out.format(file = configuration), err)
