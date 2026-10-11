@@ -80,6 +80,12 @@ OWNERS_SETUP = [
     (['UXXX2', 'xxx', 'UXXX3,UXXX4'], 'ok: owner: テスト\n', 'error: THREADVAULT_ADMIN_IDS contains invalid Slack user IDs: xxx\n', {'THREADVAULT_OWNER_ID': 'UXXX2', 'THREADVAULT_ADMIN_IDS': 'UXXX3,UXXX4'})
 ]
 
+DESTINATIONS_SETUP = [
+    ([], 'xxx/xxx', 'ok: git 2.47.0\nnext: with the Slack app running, connect GitHub and choose the destination in App Home\n'),
+    ([TOKENS_SAVED], None, 'ok: GitHub: xxx\nnext: with the Slack app running, choose the destination in App Home\n'),
+    ([TOKENS_SAVED], 'xxx/xxx', 'ok: GitHub: xxx\nok: destination: xxx/xxx\n')
+]
+
 def answer(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -464,6 +470,7 @@ class TestTerminalCommandSetup:
     @pytest.mark.parametrize(('tokens', 'saved', 'status', 'out', 'err', 'written'), TOKENS_SETUP)
     def test_slack(
         self,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
         slack: slack_sdk.web.WebClient,
@@ -489,6 +496,7 @@ class TestTerminalCommandSetup:
             configuration.parent.mkdir()
             configuration.write_text(saved, encoding = 'utf-8')
 
+        monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
         browse, _ = answer(monkeypatch, tokens = tokens)
 
@@ -504,6 +512,7 @@ class TestTerminalCommandSetup:
 
     def test_refusal(
         self,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
         slack: slack_sdk.web.WebClient,
@@ -516,6 +525,7 @@ class TestTerminalCommandSetup:
 
             return slack
 
+        monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
         monkeypatch.setattr(slack, 'apps_connections_open', unittest.mock.Mock(side_effect = [slack_sdk.errors.SlackApiError('xxx', 'xxx'), {'url': 'wss://xxx'}]))
         answer(monkeypatch, tokens = ['xoxb-xxx', 'xapp-xxx1', 'xoxb-xxx', 'xapp-xxx2'])
@@ -527,6 +537,7 @@ class TestTerminalCommandSetup:
     @pytest.mark.parametrize(('apps', 'codes', 'page', 'err', 'written'), APPS_SETUP)
     def test_github(
         self,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
         slack: slack_sdk.web.WebClient,
@@ -544,6 +555,7 @@ class TestTerminalCommandSetup:
 
             return slack
 
+        monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
         browse, request = answer(monkeypatch, apps = apps, codes = codes)
 
@@ -563,6 +575,7 @@ class TestTerminalCommandSetup:
     @pytest.mark.parametrize(('owners', 'out', 'err', 'written'), OWNERS_SETUP)
     def test_owner(
         self,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
         slack: slack_sdk.web.WebClient,
@@ -579,6 +592,7 @@ class TestTerminalCommandSetup:
 
             return slack
 
+        monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
         answer(monkeypatch, owners = owners)
 
@@ -592,6 +606,7 @@ class TestTerminalCommandSetup:
 
     def test_bot(
         self,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
         slack: slack_sdk.web.WebClient
@@ -603,9 +618,59 @@ class TestTerminalCommandSetup:
 
             return slack
 
+        monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
         monkeypatch.setattr(slack, 'users_info', unittest.mock.Mock(side_effect = [{'user': {'id': 'UXXX9', 'is_bot': True}}, {'user': {'id': 'UXXX2', 'name': 'xxx'}}]))
         answer(monkeypatch, owners = ['UXXX9', 'UXXX2', ''])
 
         assert threadvault.terminal.main(['setup']) == 0
         assert capsys.readouterr().err == 'error: UXXX9 is not a person in the workspace\n'
+
+    @pytest.mark.parametrize(('tokens', 'repository', 'out'), DESTINATIONS_SETUP)
+    def test_check(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        slack: slack_sdk.web.WebClient,
+        tokens: list[threadvault.github.oauth.Tokens],
+        repository: str | None,
+        out: str
+    ) -> None:
+
+        def connect(
+            _: str
+        ) -> slack_sdk.web.WebClient:
+
+            return slack
+
+        key = threadvault.encryption.generate()
+        database = threadvault.storage.Database(pathlib.Path(os.path.join(tmp_path, threadvault.storage.DATABASE_FILE)))
+
+        try:
+
+            threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = repository), update_user = 'UXXX1')
+
+            for pair in tokens: threadvault.github.token.TokenManager(database, threadvault.encryption.SecretCipher(key.encode('ascii')), 'xxx').save(pair)
+
+        finally:
+
+            database.close()
+
+        monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
+        monkeypatch.setenv('THREADVAULT_SECRET_KEY', key)
+        monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+        monkeypatch.setattr(threadvault.vault.repository, 'verify', unittest.mock.Mock(return_value = '2.47.0'))
+        answer(monkeypatch)
+
+        with respx.mock(assert_all_called = False) as router:
+
+            router.get(f'{threadvault.github.rest.API_URL}/user').respond(200, json = {'login': 'xxx'})
+            router.get(f'{threadvault.github.rest.API_URL}/repos/xxx/xxx').respond(200, json = {'full_name': 'xxx/xxx', 'private': True})
+
+            assert threadvault.terminal.main(['setup']) == 0
+
+        captured = capsys.readouterr()
+
+        assert out in captured.out
+        assert not captured.err

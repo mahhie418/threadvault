@@ -195,6 +195,13 @@ def _doctor(
     _: argparse.Namespace
 ) -> int:
 
+    return _check(lenient = False)
+
+def _check(
+    *,
+    lenient: bool
+) -> int:
+
     try:
 
         settings = threadvault.configuration.load()
@@ -212,7 +219,15 @@ def _doctor(
 
         try:
 
-            token = threadvault.github.token.TokenManager(database, cipher, settings.github_app_client_id).acquire(datetime.datetime.now(datetime.UTC))
+            manager = threadvault.github.token.TokenManager(database, cipher, settings.github_app_client_id)
+
+            if lenient and not manager.connected():
+
+                print('next: with the Slack app running, connect GitHub and choose the destination in App Home')
+
+                return 0
+
+            token = manager.acquire(datetime.datetime.now(datetime.UTC))
 
             print(f"ok: GitHub: {threadvault.github.rest.user(token)['login']}")
 
@@ -221,6 +236,12 @@ def _doctor(
         finally:
 
             database.close()
+
+        if lenient and repository is None:
+
+            print('next: with the Slack app running, choose the destination in App Home')
+
+            return 0
 
         if repository is None: raise threadvault.backup.runner.VaultError('No destination is chosen yet')
 
@@ -259,7 +280,7 @@ def _setup(
 
         return 1
 
-    return 0
+    return _check(lenient = True)
 
 def _create() -> None:
 
