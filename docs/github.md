@@ -36,7 +36,7 @@ Select **Install App** and the account that keeps the vault. Choose the reposito
 Run:
 
 ```
-threadvault github-login
+threadvault connect
 ```
 
 The command shows a code and the page where you enter it. Once you approve, it saves the tokens, encrypted, in the data directory and prints the GitHub account that it connected.

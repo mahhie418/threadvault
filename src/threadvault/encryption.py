@@ -108,7 +108,7 @@ def _validate(
 ) -> bytes:
 
     try: cryptography.fernet.Fernet(key)
-    except ValueError: raise SecretKeyError(f"{source} does not hold a valid key; create one with '{threadvault.product.COMMAND} generate-key'") from None
+    except ValueError: raise SecretKeyError(f"{source} does not hold a valid key; create one with '{threadvault.product.COMMAND} key'") from None
 
     return key.encode('ascii')
 

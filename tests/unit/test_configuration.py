@@ -1,5 +1,7 @@
 import os
 import pathlib
+import stat
+import sys
 
 import platformdirs
 import pytest
@@ -38,15 +40,10 @@ ENVIRONMENT_INVALID = [
 
 @pytest.fixture
 def isolated(
-    tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch
-) -> pathlib.Path:
-
-    monkeypatch.chdir(tmp_path)
+) -> None:
 
     for name in [name for name in os.environ if name.startswith(PREFIXES)]: monkeypatch.delenv(name)
-
-    return tmp_path
 
 def test_configuration_values_default() -> None:
 
@@ -123,32 +120,68 @@ def test_configuration_directory_relative(
 
     assert settings.threadvault_data_directory == expected
 
-def test_configuration_dotenv_reading(
-    isolated: pathlib.Path
-) -> None:
-
-    file = pathlib.Path(os.path.join(isolated, '.env'))
-    file.write_text('THREADVAULT_LANGUAGE_DISPLAY=ja\n', encoding = 'utf-8')
-
-    settings = threadvault.configuration.load()
-
-    assert settings.threadvault_language_display == 'ja'
-
-def test_configuration_dotenv_override(
-    isolated: pathlib.Path,
+def test_configuration_file_location(
     monkeypatch: pytest.MonkeyPatch
 ) -> None:
 
-    file = pathlib.Path(os.path.join(isolated, '.env'))
-    file.write_text('THREADVAULT_LOOKBACK_DAYS=0\n', encoding = 'utf-8')
+    monkeypatch.undo()
+    expected = pathlib.Path(os.path.join(platformdirs.user_config_path(threadvault.product.NAME, appauthor = False), 'threadvault.env'))
+
+    assert threadvault.configuration.locate() == expected
+
+@pytest.mark.usefixtures('isolated')
+def test_configuration_file_reading(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    configuration: pathlib.Path
+) -> None:
+
+    configuration.parent.mkdir()
+    configuration.write_text('THREADVAULT_LANGUAGE_DISPLAY=ja\n', encoding = 'utf-8')
+    pathlib.Path(os.path.join(tmp_path, '.env')).write_text('THREADVAULT_LOOKBACK_DAYS=7\n', encoding = 'utf-8')
+
+    monkeypatch.chdir(tmp_path)
+    settings = threadvault.configuration.load()
+
+    assert settings.threadvault_language_display == 'ja'
+    assert settings.threadvault_lookback_days == threadvault.configuration.LOOKBACK_DAYS_DEFAULT
+
+@pytest.mark.usefixtures('isolated')
+def test_configuration_file_override(
+    monkeypatch: pytest.MonkeyPatch,
+    configuration: pathlib.Path
+) -> None:
+
+    configuration.parent.mkdir()
+    configuration.write_text('THREADVAULT_LOOKBACK_DAYS=0\n', encoding = 'utf-8')
 
     monkeypatch.setenv('THREADVAULT_LOOKBACK_DAYS', '90')
     settings = threadvault.configuration.load()
 
     assert settings.threadvault_lookback_days == 90
 
+def test_configuration_file_saving(
+    configuration: pathlib.Path
+) -> None:
+
+    threadvault.configuration.save({'SLACK_BOT_TOKEN': 'xoxb-xxx1'})
+    configuration.write_text(configuration.read_text(encoding = 'utf-8') + '# xxx\nTHREADVAULT_LANGUAGE_DISPLAY=ja\n', encoding = 'utf-8')
+    threadvault.configuration.save({'SLACK_BOT_TOKEN': 'xoxb-xxx2', 'SLACK_APP_TOKEN': 'xapp-xxx'})
+
+    assert configuration.read_text(encoding = 'utf-8') == 'SLACK_BOT_TOKEN=xoxb-xxx2\n# xxx\nTHREADVAULT_LANGUAGE_DISPLAY=ja\nSLACK_APP_TOKEN=xapp-xxx\n'
+
+@pytest.mark.skipif(sys.platform == 'win32', reason = 'POSIX permissions only')
+def test_configuration_file_permission(
+    configuration: pathlib.Path
+) -> None:
+
+    threadvault.configuration.save({'SLACK_BOT_TOKEN': 'xoxb-xxx'})
+
+    assert stat.S_IMODE(configuration.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(configuration.stat().st_mode) == 0o600
+
 @pytest.mark.usefixtures('isolated')
-def test_configuration_dotenv_missing(
+def test_configuration_file_missing(
     monkeypatch: pytest.MonkeyPatch
 ) -> None:
 

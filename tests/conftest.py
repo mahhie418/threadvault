@@ -10,6 +10,8 @@ import typing
 import pytest
 import slack_sdk
 
+import threadvault.configuration
+
 class Slack(slack_sdk.web.WebClient):
 
     def __init__(
@@ -41,7 +43,7 @@ class Slack(slack_sdk.web.WebClient):
 
         match api_method:
 
-            case 'auth.test': data = {'team_id': 'TXXX', 'url': self.workspace['url']}
+            case 'auth.test': data = {'team': 'xxx', 'team_id': 'TXXX', 'url': self.workspace['url']}
             case 'users.list': data = page('members', self.workspace['users'], arguments)
             case 'conversations.list': data = page('channels', [channel for channel in self.workspace['channels'] if ('private_channel' if channel['is_private'] else 'public_channel') in types.split(',')], arguments)
             case 'conversations.members': data = page('members', self.workspace['members'][arguments['channel']], arguments)
@@ -51,6 +53,7 @@ class Slack(slack_sdk.web.WebClient):
             case 'conversations.replies': data = page('messages', [message for message in messages if message.get('thread_ts') == arguments['ts']], arguments)
             case 'users.info': data = {'user': next((user for user in self.workspace['users'] if user['id'] == arguments['user']), {'id': arguments['user']})}
             case 'views.open': data = {'view': {'id': 'VXXX'}}
+            case 'apps.connections.open': data = {'url': 'wss://xxx'}
             case 'chat.postMessage' | 'conversations.join' | 'views.publish' | 'views.update': data = {}
             case _: raise NotImplementedError(api_method)
 
@@ -92,6 +95,17 @@ def remote(
     execute('push', '--quiet', 'origin', 'HEAD:main', directory = seed)
 
     return path
+
+@pytest.fixture(autouse = True)
+def configuration(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch
+) -> pathlib.Path:
+
+    file = pathlib.Path(os.path.join(tmp_path, 'configuration', threadvault.configuration.SETTINGS_FILE))
+    monkeypatch.setattr(threadvault.configuration, 'locate', lambda: file)
+
+    return file
 
 def execute(
     *arguments: str,

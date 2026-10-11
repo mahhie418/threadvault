@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.28.1",
     "platformdirs>=4.12.2",
     "python-dotenv>=1.2.4",
+    "rich>=15.0.0",
     "slack-bolt>=1.30.0",
     "slack-sdk>=3.45.0",
     "tzdata>=2026.4 ; sys_platform == 'win32'",
@@ -44,6 +45,9 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"src/threadvault/autostart.py" = [
+    "S603"
+]
 "src/threadvault/terminal.py" = [
     "T201"
 ]
