@@ -32,3 +32,11 @@ def test_fetch_message_change(
 ) -> None:
 
     assert threadvault.backup.fetch.threads(history, stored) == expected
+
+def test_fetch_thread_mark() -> None:
+
+    assert threadvault.backup.fetch.threads([{'ts': '300.0', 'reply_count': 1, 'latest_reply': '400.0'}], [], ['300.0', '100.0']) == ['100.0', '300.0']
+
+def test_fetch_day_mark() -> None:
+
+    assert threadvault.backup.fetch.days([datetime.date(2001, 9, 9), datetime.date(2001, 9, 7), datetime.date(2001, 9, 8), datetime.date(2001, 9, 6)], '999907200.000000') == [('999734400.000000', '999820800.000000'), ('999820800.000000', '999907200.000000')]

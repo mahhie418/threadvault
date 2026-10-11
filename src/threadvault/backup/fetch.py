@@ -29,19 +29,22 @@ def window(
 
 def threads(
     history: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],
-    stored: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]]
+    stored: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],
+    marked: collections.abc.Iterable[str] = ()
 ) -> list[str]:
 
-    """Picks the threads to fetch, among the parents in the history.
+    """Picks the threads to fetch, among the parents in the history and the marked threads.
 
     A thread is fetched when the number of its replies or the timestamp of
     its latest reply differs from the parent that the vault holds, as after a
     new thread or a new reply. A reply that was only edited changes neither,
-    so its thread is not fetched.
+    so its thread is not fetched. A marked thread is fetched whatever its
+    parent, as its parent may be older than the history.
 
     Args:
         history: Messages that conversations.history returned.
         stored: Messages that the vault holds for the channel.
+        marked: Timestamps of the parent messages of the threads that events marked.
 
     Returns:
         Timestamps of the parent messages, in order of time.
@@ -49,7 +52,30 @@ def threads(
 
     parents = {message['ts']: message for message in stored}
 
-    return sorted((message['ts'] for message in history if _summarise(message) != _summarise(parents.get(message['ts'], {}))), key = decimal.Decimal)
+    return sorted({*(message['ts'] for message in history if _summarise(message) != _summarise(parents.get(message['ts'], {}))), *marked}, key = decimal.Decimal)
+
+def days(
+    marked: collections.abc.Iterable[datetime.date],
+    oldest: str
+) -> list[tuple[str, str]]:
+
+    """Gives the windows of the marked days that start before the window of the history.
+
+    A day that starts at `oldest` or later is in the history anyway.
+
+    Args:
+        marked: Days, in UTC, that events marked.
+        oldest: Timestamp of the oldest message that the history covers.
+
+    Returns:
+        The timestamps of the start of each day and of the start of the next
+        one, written as Slack writes the timestamps of messages, in order of time.
+    """
+
+    starts = sorted(datetime.datetime.combine(day, datetime.time(), datetime.UTC) for day in marked)
+    windows = [(f'{start.timestamp():.6f}', f'{(start + datetime.timedelta(days = 1)).timestamp():.6f}') for start in starts]
+
+    return [window for window in windows if decimal.Decimal(window[0]) < decimal.Decimal(oldest)]
 
 def _summarise(
     message: collections.abc.Mapping[str, typing.Any]

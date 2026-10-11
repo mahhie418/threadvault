@@ -2,9 +2,11 @@
 
 import collections.abc
 import contextlib
+import datetime
 import os
 import pathlib
 import sqlite3
+import time
 
 import slack_bolt
 import slack_bolt.adapter.socket_mode
@@ -20,6 +22,8 @@ import threadvault.storage
 
 LOCK_FILE = 'serve.lock'
 
+SCHEDULE_INTERVAL = 60
+
 class LockError(Exception):
 
     """Raised when another app already serves with the same data directory."""
@@ -29,7 +33,7 @@ def build(
     settings: threadvault.configuration.Settings,
     database: threadvault.storage.Database,
     manager: threadvault.github.token.TokenManager
-) -> slack_bolt.App:
+) -> tuple[slack_bolt.App, collections.abc.Callable[[str, datetime.datetime], None]]:
 
     """Builds the Slack app with its listeners.
 
@@ -40,16 +44,16 @@ def build(
         manager: GitHub tokens of the deployment.
 
     Returns:
-        The app.
+        The app, and the function that starts the daily backup once it is
+        due, given the workspace ID and the current time.
 
     Raises:
         slack_bolt.error.BoltError: Slack refused the bot token.
     """
 
     application = slack_bolt.App(token = client.token, client = client)
-    threadvault.slack.handler.register(application, settings, database, manager)
 
-    return application
+    return application, threadvault.slack.handler.register(application, settings, database, manager)
 
 @contextlib.contextmanager
 def lock(
@@ -111,19 +115,35 @@ def serve(
         database = threadvault.storage.Database(pathlib.Path(os.path.join(settings.threadvault_data_directory, threadvault.storage.DATABASE_FILE)))
         manager = threadvault.github.token.TokenManager(database, cipher, settings.github_app_client_id)
 
-        try: start(build(threadvault.slack.api.connect(settings.slack_bot_token), settings, database, manager), settings.slack_app_token)
-        finally: database.close()
+        try:
+
+            application, schedule = build(threadvault.slack.api.connect(settings.slack_bot_token), settings, database, manager)
+            start(application, settings.slack_app_token, schedule)
+
+        finally:
+
+            database.close()
 
 def start(
     application: slack_bolt.App,
-    token: str
+    token: str,
+    schedule: collections.abc.Callable[[str, datetime.datetime], None]
 ) -> None:
 
     """Connects the app to Slack through Socket Mode and serves it until the process stops.
 
+    Meanwhile, the daily backup is checked every `SCHEDULE_INTERVAL` seconds
+    against the clock rather than waited for, so that a backup missed while
+    the computer slept runs once it wakes.
+
     Args:
         application: The application.
         token: App-level token of the Slack app (xapp-...).
+        schedule: Function that starts the daily backup once it is due, given
+                  the workspace ID and the current time.
     """
 
-    slack_bolt.adapter.socket_mode.SocketModeHandler(application, token).start()
+    slack_bolt.adapter.socket_mode.SocketModeHandler(application, token).connect()
+    team = application.client.auth_test().get('team_id', '')
+
+    while True: schedule(team, datetime.datetime.now(datetime.UTC)); time.sleep(SCHEDULE_INTERVAL)

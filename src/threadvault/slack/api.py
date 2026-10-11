@@ -6,6 +6,7 @@ import typing
 
 import httpx
 import slack_sdk
+import slack_sdk.errors
 import slack_sdk.http_retry
 
 PAGE_SIZE = 200
@@ -83,6 +84,23 @@ def channels(
 
     return [channel for channel in entries if not (channel.get('is_ext_shared') or channel.get('is_pending_ext_shared'))]
 
+def join(
+    client: slack_sdk.web.WebClient,
+    channel: str
+) -> None:
+
+    """Makes the bot a member of a public channel.
+
+    Args:
+        client: Slack client for the workspace.
+        channel: ID of the channel.
+
+    Raises:
+        slack_sdk.errors.SlackApiError: Slack refused the request.
+    """
+
+    client.conversations_join(channel = channel)
+
 def members(
     client: slack_sdk.web.WebClient,
     channel: str
@@ -138,6 +156,8 @@ def replies(
 
     """Fetches a thread: the parent message and every reply.
 
+    A thread whose parent message no longer exists has no messages.
+
     Args:
         client: Slack client for the workspace.
         channel: ID of the channel.
@@ -150,7 +170,17 @@ def replies(
         slack_sdk.errors.SlackApiError: Slack refused a request.
     """
 
-    return _paginate(client.conversations_replies, 'messages', channel = channel, ts = thread_ts)
+    try:
+
+        return _paginate(client.conversations_replies, 'messages', channel = channel, ts = thread_ts)
+
+    except slack_sdk.errors.SlackApiError as error:
+
+        response: slack_sdk.web.SlackResponse = error.response
+
+        if response.get('error') == 'thread_not_found': return []
+
+        raise
 
 def download(
     client: slack_sdk.web.WebClient,

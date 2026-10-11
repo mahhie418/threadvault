@@ -1,6 +1,7 @@
 """One run that backs up the workspace into a vault directory, or into its vault on GitHub."""
 
 import collections.abc
+import contextlib
 import dataclasses
 import datetime
 import itertools
@@ -8,10 +9,13 @@ import json
 import logging
 import os
 import pathlib
+import sqlite3
 import typing
 
 import slack_sdk
+import slack_sdk.errors
 
+import threadvault.backup.backlog
 import threadvault.backup.fetch
 import threadvault.configuration
 import threadvault.customisation
@@ -28,8 +32,13 @@ import threadvault.vault.state
 
 ATTRIBUTES_FILE = '.gitattributes'
 _ATTRIBUTES_CONTENT = '*.json text eol=lf\n*.md text eol=lf\n'
+VAULTS_DIRECTORY = 'vaults'
 
 _LOGGER = logging.getLogger(__name__)
+
+class LockError(Exception):
+
+    """Raised when another backup is already writing the clone of the vault."""
 
 class VaultError(Exception):
 
@@ -64,18 +73,20 @@ def run(
     vault: pathlib.Path,
     settings: threadvault.customisation.Settings,
     *,
-    days: int,
+    days: int | None,
     limit: int | None,
     now: datetime.datetime,
-    checkpoint: collections.abc.Callable[[Result], None] | None = None
+    checkpoint: collections.abc.Callable[[Result], None] | None = None,
+    backlog: threadvault.backup.backlog.Backlog | None = None
 ) -> list[Result]:
 
     """Backs up the workspace into a vault directory.
 
     The run backs up the channels that the bot is a member of, only the
     selected ones in 'selected' mode. A channel that the vault does not hold
-    yet is fetched in full, and nothing is deleted from it. Any other channel
-    is fetched for the last `days` days and merged into what the vault holds.
+    yet, and every channel when `days` is None, is fetched in full, and
+    nothing is deleted from it. Any other channel is fetched for the last
+    `days` days and merged into what the vault holds.
     A renamed channel first moves to the directory of its new name. The vault
     then gets the users and the channels, the messages of each channel as
     Slack's export writes them, the Markdown of each channel and its index,
@@ -86,15 +97,26 @@ def run(
     file as soon as it is written, so that a run that stops part way does not
     fetch it in full again.
 
+    When the settings let the bot join channels, it first joins the public
+    channels that it is not in, except archived ones: every one in 'joined'
+    mode, and the selected ones in 'selected' mode. A channel that it cannot
+    join is left out, with a warning.
+
+    The threads that events marked are fetched again whatever their age, as
+    a reply to a thread older than `days` changes no message in the history.
+    So is each marked day older than `days`, as an edit or a deletion there
+    is not in the history either.
+
     Args:
         client: Slack client for the workspace.
         vault: Root directory of the vault, created when missing.
         settings: Settings of the workspace.
-        days: Number of recent days to fetch again.
+        days: Number of recent days to fetch again, or None to fetch every channel in full.
         limit: Most messages that the run may delete, or None for no limit.
         now: The current time.
         checkpoint: Function called with the result of each channel fetched in full,
                     once the state file lists it, or None.
+        backlog: What events marked for the run to fetch again, or None.
 
     Returns:
         What the run did to each channel, in the order of conversations.list.
@@ -107,14 +129,16 @@ def run(
     url = client.auth_test().get('url', '')
     users = threadvault.slack.api.users(client)
     channels = threadvault.slack.api.channels(client)
-    targets = [channel for channel in channels if channel.get('is_member') and (settings.channel_mode == 'joined' or channel['id'] in settings.channels_selected)]
+    joined = _join(client, channels, settings)
+    targets = [channel for channel in channels if (channel.get('is_member') or channel['id'] in joined) and (settings.channel_mode == 'joined' or channel['id'] in settings.channels_selected)]
     members = {channel['id']: threadvault.slack.api.members(client, channel['id']) for channel in targets}
     previous = threadvault.vault.state.load(vault)
     directories = threadvault.vault.layout.assign({channel['id']: channel['name'] for channel in targets}, previous)
     raw = pathlib.Path(os.path.join(vault, threadvault.vault.export.RAW_DIRECTORY))
     transcripts = pathlib.Path(os.path.join(vault, threadvault.vault.markdown.TRANSCRIPTS_DIRECTORY))
     progress = {channel: directory for channel, directory in directories.items() if channel in previous}
-    results: list[Result] = []
+    marked = backlog or threadvault.backup.backlog.Backlog()
+    results = []
 
     _move((raw, transcripts), previous, directories)
 
@@ -124,13 +148,14 @@ def run(
 
     for channel in targets:
 
-        known = channel['id'] in previous
+        recent = days is not None and channel['id'] in previous
         directory = directories[channel['id']]
         stored = _read(pathlib.Path(os.path.join(raw, directory)))
-        oldest, latest = threadvault.backup.fetch.window(now, days if known else None)
-        history = threadvault.slack.api.history(client, channel['id'], oldest = oldest, latest = latest)
-        threads = {thread_ts: threadvault.slack.api.replies(client, channel['id'], thread_ts) for thread_ts in threadvault.backup.fetch.threads(history, stored)}
-        outcome = threadvault.vault.merge.merge(stored, history, threads, oldest = oldest, latest = latest, now = now, limit = limit if known else 0)
+        oldest, latest = threadvault.backup.fetch.window(now, days if recent else None)
+        windows = [(oldest, latest), *threadvault.backup.fetch.days(marked.days.get(channel['id'], ()), oldest)]
+        history = [message for start, end in windows for message in threadvault.slack.api.history(client, channel['id'], oldest = start, latest = end)]
+        threads = {thread_ts: threadvault.slack.api.replies(client, channel['id'], thread_ts) for thread_ts in threadvault.backup.fetch.threads(history, stored, marked.threads.get(channel['id'], ()))}
+        outcome = threadvault.vault.merge.merge(stored, history, threads, windows = windows, now = now, limit = limit if recent else 0)
         saved, failed = _download(client, vault, itertools.chain(history, *threads.values()), settings.attachment_size_maximum * 1024 * 1024) if settings.attachments_enabled else (0, 0)
         paths = {file['id']: threadvault.vault.files.locate(file) for file in threadvault.vault.files.select(outcome.messages)}
         attachments = {file_id: path for file_id, path in paths.items() if pathlib.Path(os.path.join(vault, path)).is_file()}
@@ -142,7 +167,7 @@ def run(
 
         results.append(Result(channel = channel['id'], directory = directory, messages = len(outcome.messages), deleted = len(outcome.deleted), withheld = len(outcome.withheld), files = saved, failures = failed))
 
-        if known: continue
+        if recent: continue
 
         progress[channel['id']] = directory
         threadvault.vault.state.save(vault, progress)
@@ -161,10 +186,11 @@ def publish(
     directory: pathlib.Path,
     full_name: str,
     token: collections.abc.Callable[[], str],
-    days: int,
+    days: int | None,
     limit: int | None,
-    now: datetime.datetime
-) -> list[Result]:
+    now: datetime.datetime,
+    backlog: threadvault.backup.backlog.Backlog | None = None
+) -> tuple[list[Result], str]:
 
     """Backs up the workspace into its vault on GitHub.
 
@@ -178,20 +204,26 @@ def publish(
     goes into one commit at the end. Before every push, the repository must
     still be private.
 
+    The backup holds the lock of the clone throughout, as `hold` does, so
+    that no other backup writes the clone meanwhile.
+
     Args:
         client: Slack client for the workspace.
         settings: Settings of the workspace.
         directory: Directory for the clone of the vault.
         full_name: Repository of the vault, as owner/name.
         token: Function that gives a current GitHub access token.
-        days: Number of recent days to fetch again.
+        days: Number of recent days to fetch again, or None to fetch every channel in full.
         limit: Most messages that the run may delete, or None for no limit.
         now: The current time.
+        backlog: What events marked for the run to fetch again, or None.
 
     Returns:
-        What the run did to each channel, in the order of conversations.list.
+        What the run did to each channel, in the order of conversations.list,
+        and the full ID of the commit that the vault is at after the backup.
 
     Raises:
+        LockError: Another backup is already writing the clone.
         VaultError: The repository is public, or has disappeared.
         threadvault.github.rest.GitHubError: GitHub refused a request, or could not be reached.
         threadvault.vault.repository.GitError: git is missing or too old, or a git command failed.
@@ -199,31 +231,70 @@ def publish(
         threadvault.vault.state.StateError: The state file of the vault cannot be used.
     """
 
-    threadvault.vault.repository.verify()
+    with hold(directory):
 
-    found = threadvault.github.rest.repository(token(), full_name) or threadvault.github.rest.create(token(), full_name)
+        threadvault.vault.repository.verify()
 
-    if not found['private']: raise VaultError(f'{full_name} is public; {threadvault.product.NAME} backs up only into private repositories')
+        found = threadvault.github.rest.repository(token(), full_name) or threadvault.github.rest.create(token(), full_name)
 
-    user = threadvault.github.rest.user(token())
-    repository = threadvault.vault.repository.Repository(directory, token = token, name = user['login'], email = f'{user['id']}+{user['login']}@users.noreply.github.com')
+        if not found['private']: raise VaultError(f'{full_name} is public; {threadvault.product.NAME} backs up only into private repositories')
 
-    if pathlib.Path(os.path.join(directory, '.git')).is_dir(): repository.refresh()
-    else: repository.clone(found['clone_url'])
+        user = threadvault.github.rest.user(token())
+        repository = threadvault.vault.repository.Repository(directory, token = token, name = user['login'], email = f'{user['id']}+{user['login']}@users.noreply.github.com')
 
-    _prepare(directory, full_name.partition('/')[2], settings.markdown_language)
+        if pathlib.Path(os.path.join(directory, '.git')).is_dir(): repository.refresh()
+        else: repository.clone(found['clone_url'])
 
-    def checkpoint(
-        result: Result
-    ) -> None:
+        _prepare(directory, full_name.partition('/')[2], settings.markdown_language)
 
-        _push(repository, f'Back up #{result.directory}', token, full_name)
+        def checkpoint(
+            result: Result
+        ) -> None:
 
-    results = run(client, directory, settings, days = days, limit = limit, now = now, checkpoint = checkpoint)
+            _push(repository, f'Back up #{result.directory}', token, full_name)
 
-    _push(repository, f'Back up at {now:%Y-%m-%d %H:%M} UTC', token, full_name)
+        results = run(client, directory, settings, days = days, limit = limit, now = now, checkpoint = checkpoint, backlog = backlog)
 
-    return results
+        _push(repository, f'Back up at {now:%Y-%m-%d %H:%M} UTC', token, full_name)
+
+        return results, repository.head()
+
+@contextlib.contextmanager
+def hold(
+    directory: pathlib.Path
+) -> collections.abc.Generator[None]:
+
+    """Holds the lock of the clone of a vault while a backup writes it.
+
+    The lock file sits next to the clone. As with the lock of the app, it is
+    a SQLite database held in an exclusive transaction, which works alike on
+    every operating system, and the lock goes when the process ends, even
+    when it crashes.
+
+    Args:
+        directory: Directory of the clone; its parent is created when missing.
+
+    Yields:
+        Nothing; the lock is held until the block ends.
+
+    Raises:
+        LockError: Another backup holds the lock.
+    """
+
+    directory.parent.mkdir(parents = True, exist_ok = True)
+
+    connection = sqlite3.connect(pathlib.Path(os.path.join(directory.parent, f'{directory.name}.lock')), timeout = 0, autocommit = True)
+
+    try:
+
+        try: connection.execute('BEGIN EXCLUSIVE')
+        except sqlite3.OperationalError: raise LockError(f'Another backup is already writing {directory}') from None
+
+        yield
+
+    finally:
+
+        connection.close()
 
 def _prepare(
     directory: pathlib.Path,
@@ -251,6 +322,27 @@ def _push(
     if found is None or not found['private']: raise VaultError(f'{full_name} is no longer a private repository, so the backup was not pushed')
 
     repository.push()
+
+def _join(
+    client: slack_sdk.web.WebClient,
+    channels: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],
+    settings: threadvault.customisation.Settings
+) -> set[str]:
+
+    joined = set()
+
+    if not settings.channels_joined: return joined
+
+    for channel in channels:
+
+        if channel.get('is_private') or channel.get('is_member') or channel.get('is_archived'): continue
+        if settings.channel_mode == 'selected' and channel['id'] not in settings.channels_selected: continue
+
+        try: threadvault.slack.api.join(client, channel['id'])
+        except slack_sdk.errors.SlackApiError as error: _LOGGER.warning('Channel %s not joined: %s', channel['id'], error)
+        else: joined.add(channel['id'])
+
+    return joined
 
 def _download(
     client: slack_sdk.web.WebClient,

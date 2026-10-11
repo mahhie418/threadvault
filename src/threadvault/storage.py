@@ -32,6 +32,48 @@ _MIGRATIONS: tuple[tuple[str, ...], ...] = (
         ) STRICT
         """,
     ),
+    (
+        """
+        CREATE TABLE backup (
+            run_id INTEGER PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
+            finish_time TEXT NOT NULL,
+            repository_name TEXT NOT NULL,
+            commit_id TEXT,
+            error_message TEXT
+        ) STRICT
+        """,
+    ),
+    (
+        """
+        CREATE TABLE schedule (
+            workspace_id TEXT PRIMARY KEY,
+            run_time TEXT NOT NULL
+        ) STRICT
+        """,
+    ),
+    (
+        """
+        CREATE TABLE thread (
+            workspace_id TEXT NOT NULL,
+            channel_id TEXT NOT NULL,
+            thread_ts TEXT NOT NULL,
+            mark_time TEXT NOT NULL,
+            PRIMARY KEY (workspace_id, channel_id, thread_ts)
+        ) STRICT
+        """,
+    ),
+    (
+        """
+        CREATE TABLE day (
+            workspace_id TEXT NOT NULL,
+            channel_id TEXT NOT NULL,
+            message_date TEXT NOT NULL,
+            mark_time TEXT NOT NULL,
+            PRIMARY KEY (workspace_id, channel_id, message_date)
+        ) STRICT
+        """,
+    ),
 )
 
 class DatabaseError(Exception):

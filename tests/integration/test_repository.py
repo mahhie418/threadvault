@@ -29,10 +29,13 @@ def write(
     pathlib.Path(os.path.join(repository.path, name)).write_text(text, encoding = 'utf-8')
 
 def test_repository_version_check(
-    monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    git: collections.abc.Callable[..., str]
 ) -> None:
 
-    threadvault.vault.repository.verify()
+    assert threadvault.vault.repository.verify() == git('--version', directory = tmp_path).strip().removeprefix('git version ')
+
     monkeypatch.setattr(threadvault.vault.repository, 'VERSION_MINIMUM', (999, 0))
 
     with pytest.raises(threadvault.vault.repository.GitError, match = 'or newer is needed'): threadvault.vault.repository.verify()
@@ -67,6 +70,7 @@ def test_repository_push_commit(
     repository.push()
 
     assert git('log', '--format=%s %an', 'main', directory = remote).splitlines() == ['xxx2 xxx1', 'xxx xxx']
+    assert repository.head() == git('rev-parse', 'main', directory = remote).strip()
 
 def test_repository_push_rebase(
     tmp_path: pathlib.Path,

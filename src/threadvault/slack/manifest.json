@@ -17,6 +17,7 @@
     "scopes": {
       "bot": [
         "channels:history",
+        "channels:join",
         "channels:read",
         "chat:write",
         "files:read",
@@ -30,7 +31,9 @@
   "settings": {
     "event_subscriptions": {
       "bot_events": [
-        "app_home_opened"
+        "app_home_opened",
+        "message.channels",
+        "message.groups"
       ]
     },
     "interactivity": {
