@@ -44,6 +44,9 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"src/threadvault/autostart.py" = [
+    "S603"
+]
 "src/threadvault/terminal.py" = [
     "T201"
 ]

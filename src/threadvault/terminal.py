@@ -16,6 +16,7 @@ import webbrowser
 import slack_bolt.error
 import slack_sdk.errors
 
+import threadvault.autostart
 import threadvault.backup.runner
 import threadvault.configuration
 import threadvault.customisation
@@ -74,7 +75,7 @@ def _build() -> argparse.ArgumentParser:
     manifest.set_defaults(handler = _manifest)
     doctor = commands.add_parser('doctor', help = 'check the settings, Slack, git, GitHub and the destination')
     doctor.set_defaults(handler = _doctor)
-    setup = commands.add_parser('setup', help = 'create the Slack app, register the GitHub App and choose the owner, writing the settings file')
+    setup = commands.add_parser('setup', help = 'create the Slack app, register the GitHub App, choose the owner and start the Slack app at login, writing the settings file')
     setup.set_defaults(handler = _setup)
 
     return parser
@@ -268,7 +269,9 @@ def _setup(
 
         _create(); _register(); _appoint()
 
-    except (threadvault.configuration.ConfigurationError, slack_sdk.errors.SlackApiError) as error:
+        if (status := _check(lenient = True)) == 0: _autostart()
+
+    except (threadvault.configuration.ConfigurationError, slack_sdk.errors.SlackApiError, threadvault.autostart.AutostartError) as error:
 
         print(f'error: {error}', file = sys.stderr)
 
@@ -280,7 +283,7 @@ def _setup(
 
         return 1
 
-    return _check(lenient = True)
+    return status
 
 def _create() -> None:
 
@@ -388,6 +391,18 @@ def _name(
     profile: dict[str, str] = entry.get('profile', {})
 
     return profile.get('display_name') or profile.get('real_name') or entry.get('name') or user
+
+def _autostart() -> None:
+
+    if sys.platform not in threadvault.autostart.PLATFORMS or _ask('Start the Slack app at login, yes or no', 'yes', secret = False).lower() not in {'y', 'yes'}:
+
+        print(f"next: run '{threadvault.product.COMMAND} start' to start the Slack app")
+
+        return
+
+    log = pathlib.Path(os.path.join(threadvault.configuration.load().threadvault_data_directory, 'start.log'))
+
+    print(f'ok: autostart: {threadvault.autostart.register(log)}')
 
 def _ask(
     question: str,

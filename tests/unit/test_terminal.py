@@ -6,6 +6,7 @@ import importlib.resources
 import json
 import os
 import pathlib
+import sys
 import unittest.mock
 import urllib.parse
 import webbrowser
@@ -19,6 +20,7 @@ import slack_bolt
 import slack_sdk
 import slack_sdk.errors
 
+import threadvault.autostart
 import threadvault.backup.runner
 import threadvault.customisation
 import threadvault.encryption
@@ -86,19 +88,26 @@ DESTINATIONS_SETUP = [
     ([TOKENS_SAVED], 'xxx/xxx', 'ok: GitHub: xxx\nok: destination: xxx/xxx\n')
 ]
 
+PLATFORMS_SETUP = [
+    (frozenset({sys.platform}), [''], 'ok: autostart: xxx\n', 1),
+    (frozenset({sys.platform}), ['no'], "next: run 'threadvault start' to start the Slack app\n", 0),
+    (frozenset[str](), [], "next: run 'threadvault start' to start the Slack app\n", 0)
+]
+
 def answer(
     monkeypatch: pytest.MonkeyPatch,
     *,
     tokens: collections.abc.Sequence[str | Exception] = ('xoxb-xxx', 'xapp-xxx'),
     apps: collections.abc.Sequence[str | Exception] = ('', 'xxx', 'xxx'),
     codes: collections.abc.Sequence[Exception | None] = (None,),
-    owners: collections.abc.Sequence[str | Exception] = ('UXXX2', '')
+    owners: collections.abc.Sequence[str | Exception] = ('UXXX2', ''),
+    starts: collections.abc.Sequence[str | Exception] = ('no',)
 ) -> tuple[unittest.mock.Mock, unittest.mock.Mock]:
 
     browse, request = unittest.mock.Mock(), unittest.mock.Mock(side_effect = codes)
 
     monkeypatch.setattr(getpass, 'getpass', unittest.mock.Mock(side_effect = tokens))
-    monkeypatch.setattr(builtins, 'input', unittest.mock.Mock(side_effect = [*apps, *owners]))
+    monkeypatch.setattr(builtins, 'input', unittest.mock.Mock(side_effect = [*apps, *owners, *starts]))
     monkeypatch.setattr(webbrowser, 'open', browse)
     monkeypatch.setattr(threadvault.github.oauth, 'request', request)
 
@@ -674,3 +683,62 @@ class TestTerminalCommandSetup:
 
         assert out in captured.out
         assert not captured.err
+
+    @pytest.mark.parametrize(('platforms', 'starts', 'out', 'registrations'), PLATFORMS_SETUP)
+    def test_autostart(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        slack: slack_sdk.web.WebClient,
+        platforms: frozenset[str],
+        starts: list[str],
+        out: str,
+        registrations: int
+    ) -> None:
+
+        def connect(
+            _: str
+        ) -> slack_sdk.web.WebClient:
+
+            return slack
+
+        register = unittest.mock.Mock(return_value = 'xxx')
+
+        monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
+        monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+        monkeypatch.setattr(threadvault.vault.repository, 'verify', unittest.mock.Mock(return_value = '2.47.0'))
+        monkeypatch.setattr(threadvault.autostart, 'register', register)
+        monkeypatch.setattr(threadvault.autostart, 'PLATFORMS', platforms)
+        answer(monkeypatch, starts = starts)
+
+        assert threadvault.terminal.main(['setup']) == 0
+        assert capsys.readouterr().out.endswith(out)
+        assert register.call_args_list == [unittest.mock.call(pathlib.Path(os.path.join(tmp_path, 'start.log')))] * registrations
+
+    def test_failure(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        slack: slack_sdk.web.WebClient
+    ) -> None:
+
+        def connect(
+            _: str
+        ) -> slack_sdk.web.WebClient:
+
+            return slack
+
+        register = unittest.mock.Mock()
+
+        monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
+        monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+        monkeypatch.setattr(threadvault.vault.repository, 'verify', unittest.mock.Mock(side_effect = threadvault.vault.repository.GitError('xxx')))
+        monkeypatch.setattr(threadvault.autostart, 'register', register)
+        monkeypatch.setattr(threadvault.autostart, 'PLATFORMS', frozenset({sys.platform}))
+        answer(monkeypatch, starts = [''])
+
+        assert threadvault.terminal.main(['setup']) == 1
+        assert capsys.readouterr().err == 'error: xxx\n'
+        assert not register.called
