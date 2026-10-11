@@ -55,25 +55,25 @@ def _build() -> argparse.ArgumentParser:
     parser.add_argument('--version', action = 'version', version = f'%(prog)s {threadvault.product.VERSION}')
 
     commands = parser.add_subparsers(title = 'commands', metavar = '<command>', required = True)
-    encryption = commands.add_parser('generate-key', help = 'print a new key for THREADVAULT_SECRET_KEY')
-    encryption.set_defaults(handler = _generate_key)
-    backup = commands.add_parser('backup-now', help = 'back up the workspace once, into a local directory or a GitHub repository')
-    backup.set_defaults(handler = _backup_now)
+    key = commands.add_parser('key', help = 'print a new key for THREADVAULT_SECRET_KEY')
+    key.set_defaults(handler = _key)
+    backup = commands.add_parser('backup', help = 'back up the workspace once, into a local directory or a GitHub repository')
+    backup.set_defaults(handler = _backup)
     destination = backup.add_mutually_exclusive_group(required = True)
     destination.add_argument('--out', type = pathlib.Path, help = 'directory of the vault', metavar = 'DIR')
     destination.add_argument('--repo', help = 'GitHub repository of the vault, created as private when missing', metavar = 'OWNER/NAME')
-    login = commands.add_parser('github-login', help = 'connect GitHub with the device flow of the GitHub App')
-    login.set_defaults(handler = _github_login)
-    server = commands.add_parser('slack-serve', help = 'run the Slack app until it is stopped')
-    server.set_defaults(handler = _slack_serve)
-    manifest = commands.add_parser('print-manifest', help = 'print the manifest for creating the Slack app')
-    manifest.set_defaults(handler = _print_manifest)
+    connection = commands.add_parser('connect', help = 'connect GitHub with the device flow of the GitHub App')
+    connection.set_defaults(handler = _connect)
+    start = commands.add_parser('start', help = 'run the Slack app until it is stopped')
+    start.set_defaults(handler = _start)
+    manifest = commands.add_parser('manifest', help = 'print the manifest for creating the Slack app')
+    manifest.set_defaults(handler = _manifest)
     doctor = commands.add_parser('doctor', help = 'check the settings, Slack, git, GitHub and the destination')
     doctor.set_defaults(handler = _doctor)
 
     return parser
 
-def _generate_key(
+def _key(
     _: argparse.Namespace
 ) -> int:
 
@@ -81,7 +81,7 @@ def _generate_key(
 
     return 0
 
-def _backup_now(
+def _backup(
     namespace: argparse.Namespace
 ) -> int:
 
@@ -127,7 +127,7 @@ def _backup_now(
 
     return 0
 
-def _github_login(
+def _connect(
     _: argparse.Namespace
 ) -> int:
 
@@ -158,7 +158,7 @@ def _github_login(
 
     return 0
 
-def _slack_serve(
+def _start(
     _: argparse.Namespace
 ) -> int:
 
@@ -177,7 +177,7 @@ def _slack_serve(
 
     return 0
 
-def _print_manifest(
+def _manifest(
     _: argparse.Namespace
 ) -> int:
 
