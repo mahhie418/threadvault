@@ -16,9 +16,12 @@ class GitError(Exception):
 
     """Raised when git is missing or too old, or a git command fails."""
 
-def verify() -> None:
+def verify() -> str:
 
     """Checks that git is installed and new enough for `Repository`.
+
+    Returns:
+        The version of git, as git --version writes it.
 
     Raises:
         GitError: git is missing or older than `VERSION_MINIMUM`.
@@ -28,6 +31,8 @@ def verify() -> None:
     numbers = tuple(int(part) for part in version.split('.')[:2] if part.isdigit())
 
     if numbers < VERSION_MINIMUM: raise GitError(f'git {VERSION_MINIMUM[0]}.{VERSION_MINIMUM[1]} or newer is needed, but this is git {version}')
+
+    return version
 
 class Repository:
 

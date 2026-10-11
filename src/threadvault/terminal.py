@@ -68,6 +68,8 @@ def _build() -> argparse.ArgumentParser:
     server.set_defaults(handler = _slack_serve)
     manifest = commands.add_parser('print-manifest', help = 'print the manifest for creating the Slack app')
     manifest.set_defaults(handler = _print_manifest)
+    doctor = commands.add_parser('doctor', help = 'check the settings, Slack, git, GitHub and the destination')
+    doctor.set_defaults(handler = _doctor)
 
     return parser
 
@@ -180,5 +182,53 @@ def _print_manifest(
 ) -> int:
 
     print(importlib.resources.files('threadvault.slack').joinpath('manifest.json').read_text(encoding = 'utf-8'), end = '')
+
+    return 0
+
+def _doctor(
+    _: argparse.Namespace
+) -> int:
+
+    try:
+
+        settings = threadvault.configuration.load()
+        settings.require('slack_bot_token', 'slack_app_token', 'threadvault_owner_id', 'github_app_client_id', 'github_app_slug')
+
+        print('ok: settings')
+
+        identity = threadvault.slack.api.connect(settings.slack_bot_token).auth_test()
+
+        print(f"ok: Slack: {identity.get('url', '')}")
+        print(f'ok: git {threadvault.vault.repository.verify()}')
+
+        cipher = threadvault.encryption.SecretCipher(threadvault.encryption.load(settings.threadvault_secret_key, settings.threadvault_data_directory))
+        database = threadvault.storage.Database(pathlib.Path(os.path.join(settings.threadvault_data_directory, threadvault.storage.DATABASE_FILE)))
+
+        try:
+
+            token = threadvault.github.token.TokenManager(database, cipher, settings.github_app_client_id).acquire(datetime.datetime.now(datetime.UTC))
+
+            print(f"ok: GitHub: {threadvault.github.rest.user(token)['login']}")
+
+            repository = threadvault.customisation.SettingsIO(database).load(identity.get('team_id', '')).repository_name
+
+        finally:
+
+            database.close()
+
+        if repository is None: raise threadvault.backup.runner.VaultError('No destination is chosen yet')
+
+        found = threadvault.github.rest.repository(token, repository)
+
+        if found is None: raise threadvault.backup.runner.VaultError(f'{repository} does not exist')
+        if not found['private']: raise threadvault.backup.runner.VaultError(f'{repository} is public')
+
+    except (threadvault.configuration.ConfigurationError, slack_sdk.errors.SlackApiError, threadvault.vault.repository.GitError, threadvault.encryption.SecretKeyError, threadvault.storage.DatabaseError, threadvault.github.token.TokenError, threadvault.github.rest.GitHubError, threadvault.backup.runner.VaultError) as error:
+
+        print(f'error: {error}', file = sys.stderr)
+
+        return 1
+
+    print(f'ok: destination: {repository}')
 
     return 0
