@@ -42,6 +42,7 @@ SCHEDULE_INPUT = 'schedule_input'
 TIME_INPUT = 'time_input'
 MODE_INPUT = 'mode_input'
 CHANNELS_INPUT = 'channels_input'
+JOINING_INPUT = 'joining_input'
 ATTACHMENTS_INPUT = 'attachments_input'
 SIZE_INPUT = 'size_input'
 LANGUAGE_INPUT = 'language_input'
@@ -398,9 +399,10 @@ def configure(
 
     The daily backup runs at its time in its time zone, which the Markdown
     follows too from the next backup. Backups cover every channel that the
-    bot is in, or only the chosen ones among them, and save the attached
-    files up to a size, or none. The Markdown follows the chosen language
-    too from the next backup.
+    bot is in, or only the chosen ones among them, which the bot first joins
+    when they are public and joining is on, and save the attached files up
+    to a size, or none. The Markdown follows the chosen language too from
+    the next backup.
 
     Args:
         workspace: Settings of the workspace to show.
@@ -423,6 +425,7 @@ def configure(
         {'type': 'input', 'block_id': TIMEZONE_ACTION, 'label': _plain(threadvault.localisation.translate('settings.timezone', language)), 'hint': _plain(threadvault.localisation.translate('settings.timezone.hint', language)), 'element': {'type': 'external_select', 'action_id': TIMEZONE_ACTION, 'min_query_length': 1, 'initial_option': _option(workspace.workspace_timezone)}},
         {'type': 'input', 'block_id': MODE_INPUT, 'label': _plain(threadvault.localisation.translate('settings.mode', language)), 'element': {'type': 'radio_buttons', 'action_id': MODE_INPUT, 'options': list(modes.values()), 'initial_option': modes[workspace.channel_mode]}},
         {'type': 'input', 'block_id': CHANNELS_INPUT, 'optional': True, 'label': _plain(threadvault.localisation.translate('settings.channels', language)), 'hint': _plain(threadvault.localisation.translate('settings.channels.hint', language)), 'element': channels},
+        {'type': 'input', 'block_id': JOINING_INPUT, 'optional': True, 'label': _plain(threadvault.localisation.translate('settings.joining', language)), 'hint': _plain(threadvault.localisation.translate('settings.joining.hint', language)), 'element': _checkbox(JOINING_INPUT, [{'text': _plain(threadvault.localisation.translate('settings.joining.enabled', language)), 'value': 'enabled'}], ('enabled',) if workspace.channels_joined else ())},
         {'type': 'input', 'block_id': ATTACHMENTS_INPUT, 'optional': True, 'label': _plain(threadvault.localisation.translate('settings.attachments', language)), 'element': _checkbox(ATTACHMENTS_INPUT, [{'text': _plain(threadvault.localisation.translate('settings.attachments.enabled', language)), 'value': 'enabled'}], ('enabled',) if workspace.attachments_enabled else ())},
         {'type': 'input', 'block_id': SIZE_INPUT, 'label': _plain(threadvault.localisation.translate('settings.size', language)), 'hint': _plain(threadvault.localisation.translate('settings.size.hint', language, maximum = str(threadvault.customisation.ATTACHMENT_SIZE_MAXIMUM))), 'element': {'type': 'number_input', 'action_id': SIZE_INPUT, 'is_decimal_allowed': False, 'min_value': '1', 'max_value': str(threadvault.customisation.ATTACHMENT_SIZE_MAXIMUM), 'initial_value': str(workspace.attachment_size_maximum)}},
         {'type': 'input', 'block_id': LANGUAGE_INPUT, 'label': _plain(threadvault.localisation.translate('settings.language', language)), 'hint': _plain(threadvault.localisation.translate('settings.language.hint', language)), 'element': {'type': 'radio_buttons', 'action_id': LANGUAGE_INPUT, 'options': list(languages.values()), 'initial_option': languages[workspace.markdown_language]}}

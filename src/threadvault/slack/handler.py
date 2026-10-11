@@ -63,9 +63,9 @@ def register(
     destination is chosen, the daily backup runs at the time in the settings
     of the workspace, and one missed while the app was stopped runs as soon
     as the app runs again. The settings say whether it runs and its time and
-    time zone, which the Markdown follows too, which channels backups cover,
-    whether they save attached files and up to which size, and the language
-    of the Markdown.
+    time zone, which the Markdown follows too, which channels backups cover
+    and whether the bot joins the public ones first, whether they save
+    attached files and up to which size, and the language of the Markdown.
 
     A reply to a thread marks the thread, and the next backup fetches the
     marked threads again, so that it does not miss a reply to a thread older
@@ -500,7 +500,7 @@ def register(
         values: dict[str, dict[str, dict[str, typing.Any]]] = view['state']['values']
         elements = {action: element for block in values.values() for action, element in block.items()}
         previous = store.load(team)
-        workspace = dataclasses.replace(previous, schedule_enabled = bool(elements[threadvault.slack.view.SCHEDULE_INPUT]['selected_options']), schedule_time = elements[threadvault.slack.view.TIME_INPUT]['selected_time'], workspace_timezone = elements[threadvault.slack.view.TIMEZONE_ACTION]['selected_option']['value'], channel_mode = elements[threadvault.slack.view.MODE_INPUT]['selected_option']['value'], channels_selected = tuple(sorted(elements[threadvault.slack.view.CHANNELS_INPUT].get('selected_conversations', []))), attachments_enabled = bool(elements[threadvault.slack.view.ATTACHMENTS_INPUT]['selected_options']), attachment_size_maximum = int(elements[threadvault.slack.view.SIZE_INPUT]['value']), markdown_language = elements[threadvault.slack.view.LANGUAGE_INPUT]['selected_option']['value'])
+        workspace = dataclasses.replace(previous, schedule_enabled = bool(elements[threadvault.slack.view.SCHEDULE_INPUT]['selected_options']), schedule_time = elements[threadvault.slack.view.TIME_INPUT]['selected_time'], workspace_timezone = elements[threadvault.slack.view.TIMEZONE_ACTION]['selected_option']['value'], channel_mode = elements[threadvault.slack.view.MODE_INPUT]['selected_option']['value'], channels_selected = tuple(sorted(elements[threadvault.slack.view.CHANNELS_INPUT].get('selected_conversations', []))), channels_joined = bool(elements[threadvault.slack.view.JOINING_INPUT]['selected_options']), attachments_enabled = bool(elements[threadvault.slack.view.ATTACHMENTS_INPUT]['selected_options']), attachment_size_maximum = int(elements[threadvault.slack.view.SIZE_INPUT]['value']), markdown_language = elements[threadvault.slack.view.LANGUAGE_INPUT]['selected_option']['value'])
 
         if workspace.channel_mode == 'selected' and not workspace.channels_selected:
 

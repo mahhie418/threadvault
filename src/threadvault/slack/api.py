@@ -84,6 +84,23 @@ def channels(
 
     return [channel for channel in entries if not (channel.get('is_ext_shared') or channel.get('is_pending_ext_shared'))]
 
+def join(
+    client: slack_sdk.web.WebClient,
+    channel: str
+) -> None:
+
+    """Makes the bot a member of a public channel.
+
+    Args:
+        client: Slack client for the workspace.
+        channel: ID of the channel.
+
+    Raises:
+        slack_sdk.errors.SlackApiError: Slack refused the request.
+    """
+
+    client.conversations_join(channel = channel)
+
 def members(
     client: slack_sdk.web.WebClient,
     channel: str

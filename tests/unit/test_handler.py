@@ -259,7 +259,7 @@ def configured(
     settings: threadvault.customisation.Settings
 ) -> dict[str, typing.Any]:
 
-    return {'callback_id': threadvault.slack.view.SETTINGS_CALLBACK, 'state': {'values': {threadvault.slack.view.SCHEDULE_INPUT: {threadvault.slack.view.SCHEDULE_INPUT: {'type': 'checkboxes', 'selected_options': [{'value': 'enabled'}] if settings.schedule_enabled else []}}, threadvault.slack.view.TIME_INPUT: {threadvault.slack.view.TIME_INPUT: {'type': 'timepicker', 'selected_time': settings.schedule_time}}, threadvault.slack.view.TIMEZONE_ACTION: {threadvault.slack.view.TIMEZONE_ACTION: {'type': 'external_select', 'selected_option': {'text': {'type': 'plain_text', 'text': settings.workspace_timezone}, 'value': settings.workspace_timezone}}}, threadvault.slack.view.MODE_INPUT: {threadvault.slack.view.MODE_INPUT: {'type': 'radio_buttons', 'selected_option': {'value': settings.channel_mode}}}, threadvault.slack.view.CHANNELS_INPUT: {threadvault.slack.view.CHANNELS_INPUT: {'type': 'multi_conversations_select', 'selected_conversations': list(settings.channels_selected)}}, threadvault.slack.view.ATTACHMENTS_INPUT: {threadvault.slack.view.ATTACHMENTS_INPUT: {'type': 'checkboxes', 'selected_options': [{'value': 'enabled'}] if settings.attachments_enabled else []}}, threadvault.slack.view.SIZE_INPUT: {threadvault.slack.view.SIZE_INPUT: {'type': 'number_input', 'value': str(settings.attachment_size_maximum)}}, threadvault.slack.view.LANGUAGE_INPUT: {threadvault.slack.view.LANGUAGE_INPUT: {'type': 'radio_buttons', 'selected_option': {'value': settings.markdown_language}}}}}}
+    return {'callback_id': threadvault.slack.view.SETTINGS_CALLBACK, 'state': {'values': {threadvault.slack.view.SCHEDULE_INPUT: {threadvault.slack.view.SCHEDULE_INPUT: {'type': 'checkboxes', 'selected_options': [{'value': 'enabled'}] if settings.schedule_enabled else []}}, threadvault.slack.view.TIME_INPUT: {threadvault.slack.view.TIME_INPUT: {'type': 'timepicker', 'selected_time': settings.schedule_time}}, threadvault.slack.view.TIMEZONE_ACTION: {threadvault.slack.view.TIMEZONE_ACTION: {'type': 'external_select', 'selected_option': {'text': {'type': 'plain_text', 'text': settings.workspace_timezone}, 'value': settings.workspace_timezone}}}, threadvault.slack.view.MODE_INPUT: {threadvault.slack.view.MODE_INPUT: {'type': 'radio_buttons', 'selected_option': {'value': settings.channel_mode}}}, threadvault.slack.view.CHANNELS_INPUT: {threadvault.slack.view.CHANNELS_INPUT: {'type': 'multi_conversations_select', 'selected_conversations': list(settings.channels_selected)}}, threadvault.slack.view.JOINING_INPUT: {threadvault.slack.view.JOINING_INPUT: {'type': 'checkboxes', 'selected_options': [{'value': 'enabled'}] if settings.channels_joined else []}}, threadvault.slack.view.ATTACHMENTS_INPUT: {threadvault.slack.view.ATTACHMENTS_INPUT: {'type': 'checkboxes', 'selected_options': [{'value': 'enabled'}] if settings.attachments_enabled else []}}, threadvault.slack.view.SIZE_INPUT: {threadvault.slack.view.SIZE_INPUT: {'type': 'number_input', 'value': str(settings.attachment_size_maximum)}}, threadvault.slack.view.LANGUAGE_INPUT: {threadvault.slack.view.LANGUAGE_INPUT: {'type': 'radio_buttons', 'selected_option': {'value': settings.markdown_language}}}}}}
 
 def calls(
     workspace: dict[str, typing.Any],
@@ -989,6 +989,14 @@ def test_handler_settings_channel(
 
     assert submit(application, 'UXXX1', configured(threadvault.customisation.Settings(channel_mode = 'selected', channels_selected = ('CXXX2', 'CXXX1')))).body == ''
     assert threadvault.customisation.SettingsIO(database).load('TXXX') == threadvault.customisation.Settings(channel_mode = 'selected', channels_selected = ('CXXX1', 'CXXX2'))
+
+def test_handler_settings_joining(
+    application: slack_bolt.App,
+    database: threadvault.storage.Database
+) -> None:
+
+    assert submit(application, 'UXXX1', configured(threadvault.customisation.Settings(channels_joined = False))).body == ''
+    assert threadvault.customisation.SettingsIO(database).load('TXXX') == threadvault.customisation.Settings(channels_joined = False)
 
 def test_handler_settings_attachment(
     application: slack_bolt.App,

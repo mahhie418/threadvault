@@ -47,6 +47,15 @@ def test_api_channel_exclusion(
 
     assert threadvault.slack.api.channels(slack) == channels
 
+def test_api_channel_join(
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    threadvault.slack.api.join(slack, 'CXXX1')
+
+    assert workspace['calls'] == [('conversations.join', {'channel': 'CXXX1'})]
+
 def test_api_member_pagination(
     workspace: dict[str, typing.Any],
     slack: slack_sdk.web.WebClient

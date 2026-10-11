@@ -13,6 +13,7 @@ import sqlite3
 import typing
 
 import slack_sdk
+import slack_sdk.errors
 
 import threadvault.backup.backlog
 import threadvault.backup.fetch
@@ -96,6 +97,11 @@ def run(
     file as soon as it is written, so that a run that stops part way does not
     fetch it in full again.
 
+    When the settings let the bot join channels, it first joins the public
+    channels that it is not in, except archived ones: every one in 'joined'
+    mode, and the selected ones in 'selected' mode. A channel that it cannot
+    join is left out, with a warning.
+
     The threads that events marked are fetched again whatever their age, as
     a reply to a thread older than `days` changes no message in the history.
     So is each marked day older than `days`, as an edit or a deletion there
@@ -123,7 +129,8 @@ def run(
     url = client.auth_test().get('url', '')
     users = threadvault.slack.api.users(client)
     channels = threadvault.slack.api.channels(client)
-    targets = [channel for channel in channels if channel.get('is_member') and (settings.channel_mode == 'joined' or channel['id'] in settings.channels_selected)]
+    joined = _join(client, channels, settings)
+    targets = [channel for channel in channels if (channel.get('is_member') or channel['id'] in joined) and (settings.channel_mode == 'joined' or channel['id'] in settings.channels_selected)]
     members = {channel['id']: threadvault.slack.api.members(client, channel['id']) for channel in targets}
     previous = threadvault.vault.state.load(vault)
     directories = threadvault.vault.layout.assign({channel['id']: channel['name'] for channel in targets}, previous)
@@ -315,6 +322,27 @@ def _push(
     if found is None or not found['private']: raise VaultError(f'{full_name} is no longer a private repository, so the backup was not pushed')
 
     repository.push()
+
+def _join(
+    client: slack_sdk.web.WebClient,
+    channels: collections.abc.Iterable[collections.abc.Mapping[str, typing.Any]],
+    settings: threadvault.customisation.Settings
+) -> set[str]:
+
+    joined = set()
+
+    if not settings.channels_joined: return joined
+
+    for channel in channels:
+
+        if channel.get('is_private') or channel.get('is_member') or channel.get('is_archived'): continue
+        if settings.channel_mode == 'selected' and channel['id'] not in settings.channels_selected: continue
+
+        try: threadvault.slack.api.join(client, channel['id'])
+        except slack_sdk.errors.SlackApiError as error: _LOGGER.warning('Channel %s not joined: %s', channel['id'], error)
+        else: joined.add(channel['id'])
+
+    return joined
 
 def _download(
     client: slack_sdk.web.WebClient,

@@ -5,11 +5,13 @@ import json
 import os
 import pathlib
 import typing
+import unittest.mock
 
 import httpx
 import pytest
 import respx
 import slack_sdk
+import slack_sdk.errors
 
 import threadvault.backup.backlog
 import threadvault.backup.runner
@@ -29,6 +31,15 @@ MESSAGES_DELETION = {'1510880400.000000', '1791075600.000001'}
 THREAD_INSERTION = [
     {'latest_reply': '1791160200.000000', 'reply_count': 1, 'text': 'xxx', 'thread_ts': '1791158400.000000', 'ts': '1791158400.000000', 'type': 'message', 'user': 'UXXX1'},
     {'parent_user_id': 'UXXX1', 'text': 'xxx', 'thread_ts': '1791158400.000000', 'ts': '1791160200.000000', 'type': 'message', 'user': 'UXXX2'}
+]
+
+CHANNELS_JOINED = [
+    (threadvault.customisation.Settings(), {'CXXX1': {'is_member': False}}, ['CXXX1'], ['CXXX2', 'CXXX1']),
+    (threadvault.customisation.Settings(channels_joined = False), {'CXXX1': {'is_member': False}}, [], ['CXXX2']),
+    (threadvault.customisation.Settings(channel_mode = 'selected', channels_selected = ('CXXX1',)), {'CXXX1': {'is_member': False}}, ['CXXX1'], ['CXXX1']),
+    (threadvault.customisation.Settings(channel_mode = 'selected', channels_selected = ('CXXX2',)), {'CXXX1': {'is_member': False}}, [], ['CXXX2']),
+    (threadvault.customisation.Settings(), {'CXXX1': {'is_member': False, 'is_archived': True}}, [], ['CXXX2']),
+    (threadvault.customisation.Settings(), {'CXXX2': {'is_member': False}}, [], ['CXXX1'])
 ]
 
 REPLY_THREAD = {'parent_user_id': 'UXXX1', 'text': 'xxx', 'thread_ts': '1510963199.000000', 'ts': '1791158400.000000', 'type': 'message', 'user': 'UXXX2'}
@@ -203,7 +214,7 @@ def test_runner_vault_addition(
     channel = next(channel for channel in workspace['channels'] if channel['id'] == 'CXXX1')
     channel['is_member'] = False
 
-    assert [result.channel for result in run(slack, tmp_path)] == ['CXXX2']
+    assert [result.channel for result in run(slack, tmp_path, dataclasses.replace(SETTINGS, channels_joined = False))] == ['CXXX2']
 
     channel['is_member'] = True
 
@@ -222,6 +233,38 @@ def test_runner_vault_selection(
     assert [channel['id'] for channel in read(tmp_path, 'groups.json')] == ['CXXX2']
     assert read(tmp_path, 'channels.json') == []
     assert threadvault.vault.state.load(tmp_path) == {'CXXX2': 'xxx'}
+
+@pytest.mark.parametrize(('settings', 'changes', 'joined', 'channels'), CHANNELS_JOINED)
+def test_runner_vault_joining(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient,
+    settings: threadvault.customisation.Settings,
+    changes: dict[str, dict[str, bool]],
+    joined: list[str],
+    channels: list[str]
+) -> None:
+
+    for channel in workspace['channels']: channel.update(changes.get(channel['id'], {}))
+
+    results = run(slack, tmp_path, settings)
+
+    assert [arguments['channel'] for name, arguments in workspace['calls'] if name == 'conversations.join'] == joined
+    assert [result.channel for result in results] == channels
+
+def test_runner_vault_rejection(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    next(channel for channel in workspace['channels'] if channel['id'] == 'CXXX1')['is_member'] = False
+    monkeypatch.setattr(threadvault.slack.api, 'join', unittest.mock.Mock(side_effect = slack_sdk.errors.SlackApiError('xxx', {'ok': False, 'error': 'xxx'})))
+
+    assert [result.channel for result in run(slack, tmp_path)] == ['CXXX2']
+    assert 'Channel CXXX1 not joined: xxx' in caplog.text
 
 def test_runner_vault_backlog(
     tmp_path: pathlib.Path,
