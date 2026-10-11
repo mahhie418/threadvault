@@ -53,6 +53,7 @@ class Slack(slack_sdk.web.WebClient):
             case 'conversations.replies': data = page('messages', [message for message in messages if message.get('thread_ts') == arguments['ts']], arguments)
             case 'users.info': data = {'user': next((user for user in self.workspace['users'] if user['id'] == arguments['user']), {'id': arguments['user']})}
             case 'views.open': data = {'view': {'id': 'VXXX'}}
+            case 'apps.connections.open': data = {'url': 'wss://xxx'}
             case 'chat.postMessage' | 'conversations.join' | 'views.publish' | 'views.update': data = {}
             case _: raise NotImplementedError(api_method)
 

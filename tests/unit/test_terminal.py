@@ -1,11 +1,16 @@
 import collections.abc
 import datetime
+import getpass
+import importlib.resources
 import json
 import os
 import pathlib
 import unittest.mock
+import urllib.parse
+import webbrowser
 
 import cryptography.fernet
+import dotenv
 import httpx
 import pytest
 import respx
@@ -51,6 +56,26 @@ STAGES_FAILED = [
     ({}, slack_sdk.errors.SlackApiError('xxx', 'xxx'), ['2.47.0'], 'ok: settings ({file})\n', 'error: xxx\nThe server responded with: xxx\n'),
     ({}, [{'team_id': 'TXXX', 'url': 'https://xxx.slack.com/'}], threadvault.vault.repository.GitError('xxx'), 'ok: settings ({file})\nok: Slack: https://xxx.slack.com/\n', 'error: xxx\n')
 ]
+
+TOKENS_SETUP = [
+    (['xoxb-xxx', 'xapp-xxx'], '', 0, 'ok: Slack: https://xxx.slack.com/\n', '', {'SLACK_BOT_TOKEN': 'xoxb-xxx', 'SLACK_APP_TOKEN': 'xapp-xxx'}),
+    (['xapp-xxx', 'xoxb-xxx', 'xoxb-xxx', 'xapp-xxx'], '', 0, 'ok: Slack: https://xxx.slack.com/\n', 'error: SLACK_BOT_TOKEN must be a bot token starting with xoxb-\n', {'SLACK_BOT_TOKEN': 'xoxb-xxx', 'SLACK_APP_TOKEN': 'xapp-xxx'}),
+    (['', '', 'xoxb-xxx', 'xapp-xxx'], '', 0, 'ok: Slack: https://xxx.slack.com/\n', 'error: Missing required environment variables: SLACK_BOT_TOKEN, SLACK_APP_TOKEN\n', {'SLACK_BOT_TOKEN': 'xoxb-xxx', 'SLACK_APP_TOKEN': 'xapp-xxx'}),
+    (['', ''], 'SLACK_BOT_TOKEN=xoxb-xxx\nSLACK_APP_TOKEN=xapp-xxx\n', 0, 'ok: Slack: https://xxx.slack.com/\n', '', {'SLACK_BOT_TOKEN': 'xoxb-xxx', 'SLACK_APP_TOKEN': 'xapp-xxx'}),
+    ([EOFError()], '', 1, '', '\nerror: Setup was stopped\n', {})
+]
+
+def answer(
+    monkeypatch: pytest.MonkeyPatch,
+    tokens: list[str | Exception]
+) -> unittest.mock.Mock:
+
+    browse = unittest.mock.Mock()
+
+    monkeypatch.setattr(getpass, 'getpass', unittest.mock.Mock(side_effect = tokens))
+    monkeypatch.setattr(webbrowser, 'open', browse)
+
+    return browse
 
 def test_terminal_version(
     capsys: pytest.CaptureFixture[str]
@@ -412,3 +437,68 @@ class TestTerminalCommandDoctor:
 
         assert threadvault.terminal.main(['doctor']) == 1
         assert capsys.readouterr() == (out.format(file = configuration), err)
+
+class TestTerminalCommandSetup:
+
+    @pytest.mark.parametrize(('tokens', 'saved', 'status', 'out', 'err', 'written'), TOKENS_SETUP)
+    def test_slack(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        slack: slack_sdk.web.WebClient,
+        configuration: pathlib.Path,
+        tokens: list[str | Exception],
+        saved: str,
+        status: int,
+        out: str,
+        err: str,
+        written: dict[str, str]
+    ) -> None:
+
+        def connect(
+            _: str
+        ) -> slack_sdk.web.WebClient:
+
+            return slack
+
+        manifest = json.loads(importlib.resources.files('threadvault.slack').joinpath('manifest.json').read_text(encoding = 'utf-8'))
+
+        if saved:
+
+            configuration.parent.mkdir()
+            configuration.write_text(saved, encoding = 'utf-8')
+
+        monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+        browse = answer(monkeypatch, tokens)
+
+        assert threadvault.terminal.main(['setup']) == status
+
+        captured = capsys.readouterr()
+        url: str = browse.call_args_list[0].args[0]
+
+        assert out in captured.out
+        assert captured.err == err
+        assert json.loads(urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)['manifest_json'][0]) == manifest
+        assert {name: value for name, value in dotenv.dotenv_values(configuration).items() if name.startswith('SLACK_')} == written
+
+    def test_refusal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        slack: slack_sdk.web.WebClient,
+        configuration: pathlib.Path
+    ) -> None:
+
+        def connect(
+            _: str
+        ) -> slack_sdk.web.WebClient:
+
+            return slack
+
+        monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+        monkeypatch.setattr(slack, 'apps_connections_open', unittest.mock.Mock(side_effect = [slack_sdk.errors.SlackApiError('xxx', 'xxx'), {'url': 'wss://xxx'}]))
+        answer(monkeypatch, ['xoxb-xxx', 'xapp-xxx1', 'xoxb-xxx', 'xapp-xxx2'])
+
+        assert threadvault.terminal.main(['setup']) == 0
+        assert capsys.readouterr().err == 'error: xxx\nThe server responded with: xxx\n'
+        assert dotenv.dotenv_values(configuration)['SLACK_APP_TOKEN'] == 'xapp-xxx2'

@@ -1,5 +1,7 @@
 import os
 import pathlib
+import stat
+import sys
 
 import platformdirs
 import pytest
@@ -157,6 +159,26 @@ def test_configuration_file_override(
     settings = threadvault.configuration.load()
 
     assert settings.threadvault_lookback_days == 90
+
+def test_configuration_file_saving(
+    configuration: pathlib.Path
+) -> None:
+
+    threadvault.configuration.save({'SLACK_BOT_TOKEN': 'xoxb-xxx1'})
+    configuration.write_text(configuration.read_text(encoding = 'utf-8') + '# xxx\nTHREADVAULT_LANGUAGE_DISPLAY=ja\n', encoding = 'utf-8')
+    threadvault.configuration.save({'SLACK_BOT_TOKEN': 'xoxb-xxx2', 'SLACK_APP_TOKEN': 'xapp-xxx'})
+
+    assert configuration.read_text(encoding = 'utf-8') == 'SLACK_BOT_TOKEN=xoxb-xxx2\n# xxx\nTHREADVAULT_LANGUAGE_DISPLAY=ja\nSLACK_APP_TOKEN=xapp-xxx\n'
+
+@pytest.mark.skipif(sys.platform == 'win32', reason = 'POSIX permissions only')
+def test_configuration_file_permission(
+    configuration: pathlib.Path
+) -> None:
+
+    threadvault.configuration.save({'SLACK_BOT_TOKEN': 'xoxb-xxx'})
+
+    assert stat.S_IMODE(configuration.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(configuration.stat().st_mode) == 0o600
 
 @pytest.mark.usefixtures('isolated')
 def test_configuration_file_missing(

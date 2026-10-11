@@ -4,10 +4,14 @@ import argparse
 import contextlib
 import dataclasses
 import datetime
+import getpass
 import importlib.resources
+import json
 import os
 import pathlib
 import sys
+import urllib.parse
+import webbrowser
 
 import slack_bolt.error
 import slack_sdk.errors
@@ -70,6 +74,8 @@ def _build() -> argparse.ArgumentParser:
     manifest.set_defaults(handler = _manifest)
     doctor = commands.add_parser('doctor', help = 'check the settings, Slack, git, GitHub and the destination')
     doctor.set_defaults(handler = _doctor)
+    setup = commands.add_parser('setup', help = 'create the Slack app and write its tokens into the settings file')
+    setup.set_defaults(handler = _setup)
 
     return parser
 
@@ -232,3 +238,68 @@ def _doctor(
     print(f'ok: destination: {repository}')
 
     return 0
+
+def _setup(
+    _: argparse.Namespace
+) -> int:
+
+    try:
+
+        _create()
+
+    except threadvault.configuration.ConfigurationError as error:
+
+        print(f'error: {error}', file = sys.stderr)
+
+        return 1
+
+    except (EOFError, KeyboardInterrupt):
+
+        print('\nerror: Setup was stopped', file = sys.stderr)
+
+        return 1
+
+    return 0
+
+def _create() -> None:
+
+    settings = threadvault.configuration.load()
+    manifest = json.loads(importlib.resources.files('threadvault.slack').joinpath('manifest.json').read_text(encoding = 'utf-8'))
+    url = f'https://api.slack.com/apps?new_app=1&manifest_json={urllib.parse.quote(json.dumps(manifest, separators = (',', ':')))}'
+
+    print(f'Create the Slack app from its manifest: {url}')
+    print('Choose the workspace, create the app and install it. Then copy the Bot User OAuth Token in OAuth & Permissions, and generate an App-Level Token with the connections:write scope in Basic Information.', flush = True)
+    webbrowser.open(url)
+
+    while True:
+
+        bot, app = _ask('Bot User OAuth Token', settings.slack_bot_token), _ask('App-Level Token', settings.slack_app_token)
+
+        try: identity = _identify(bot, app)
+        except (threadvault.configuration.ConfigurationError, slack_sdk.errors.SlackApiError) as error: print(f'error: {error}', file = sys.stderr)
+        else: break
+
+    threadvault.configuration.save({'SLACK_BOT_TOKEN': bot, 'SLACK_APP_TOKEN': app})
+
+    print(f"ok: Slack: {identity.get('url', '')}")
+
+def _identify(
+    bot: str,
+    app: str
+) -> slack_sdk.web.SlackResponse:
+
+    threadvault.configuration.load({'SLACK_BOT_TOKEN': bot, 'SLACK_APP_TOKEN': app}).require('slack_bot_token', 'slack_app_token')
+    client = threadvault.slack.api.connect(bot)
+    identity = client.auth_test()
+    client.apps_connections_open(app_token = app)
+
+    return identity
+
+def _ask(
+    question: str,
+    current: str
+) -> str:
+
+    answer = getpass.getpass(f'{question}{' [keep current]' if current else ''}: ')
+
+    return answer.strip() or current

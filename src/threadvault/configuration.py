@@ -1,4 +1,4 @@
-"""Configuration read from environment variables and the settings file of the user."""
+"""Configuration read from environment variables and the settings file of the user, which setup writes."""
 
 import collections.abc
 import dataclasses
@@ -131,6 +131,26 @@ def load(
         threadvault_lookback_days = _parse('THREADVAULT_LOOKBACK_DAYS', environment, category = 'integer', default = LOOKBACK_DAYS_DEFAULT, minimum = 1, maximum = LOOKBACK_DAYS_MAXIMUM),
         threadvault_deletions_maximum = _parse('THREADVAULT_DELETIONS_MAXIMUM', environment, category = 'integer', default = None, minimum = 0)
     )
+
+def save(
+    values: collections.abc.Mapping[str, str]
+) -> None:
+
+    """Writes values into the settings file, keeping its other lines.
+
+    The file and its directory are created when missing, and only the user
+    may read the file on POSIX systems, because it holds credentials.
+
+    Args:
+        values: Values by environment variable name.
+    """
+
+    file = locate()
+    file.parent.mkdir(mode = 0o700, parents = True, exist_ok = True)
+
+    for name, value in values.items(): dotenv.set_key(file, name, value, quote_mode = 'never')
+
+    file.chmod(0o600)
 
 def locate() -> pathlib.Path:
 
