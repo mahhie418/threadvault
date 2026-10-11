@@ -1,3 +1,4 @@
+import builtins
 import collections.abc
 import datetime
 import getpass
@@ -65,17 +66,29 @@ TOKENS_SETUP = [
     ([EOFError()], '', 1, '', '\nerror: Setup was stopped\n', {})
 ]
 
+APPS_SETUP = [
+    (['', 'xxx', 'xxx'], [None], 'https://github.com/settings/apps/new', '', {'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'}),
+    (['xxx', 'xxx', 'xxx'], [None], 'https://github.com/organizations/xxx/settings/apps/new', '', {'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'}),
+    (['', 'xxx', 'xxx_xxx', 'xxx', 'xxx'], [None], 'https://github.com/settings/apps/new', 'error: GITHUB_APP_SLUG may only contain lower-case letters, digits and hyphens\n', {'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'}),
+    (['', 'xxx', 'xxx', 'xxx', 'xxx'], [threadvault.github.oauth.OAuthError('device_flow_disabled', 'xxx'), None], 'https://github.com/settings/apps/new', 'error: xxx\n', {'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'})
+]
+
 def answer(
     monkeypatch: pytest.MonkeyPatch,
-    tokens: list[str | Exception]
-) -> unittest.mock.Mock:
+    *,
+    tokens: collections.abc.Sequence[str | Exception] = ('xoxb-xxx', 'xapp-xxx'),
+    apps: collections.abc.Sequence[str | Exception] = ('', 'xxx', 'xxx'),
+    codes: collections.abc.Sequence[Exception | None] = (None,)
+) -> tuple[unittest.mock.Mock, unittest.mock.Mock]:
 
-    browse = unittest.mock.Mock()
+    browse, request = unittest.mock.Mock(), unittest.mock.Mock(side_effect = codes)
 
     monkeypatch.setattr(getpass, 'getpass', unittest.mock.Mock(side_effect = tokens))
+    monkeypatch.setattr(builtins, 'input', unittest.mock.Mock(side_effect = apps))
     monkeypatch.setattr(webbrowser, 'open', browse)
+    monkeypatch.setattr(threadvault.github.oauth, 'request', request)
 
-    return browse
+    return browse, request
 
 def test_terminal_version(
     capsys: pytest.CaptureFixture[str]
@@ -469,7 +482,7 @@ class TestTerminalCommandSetup:
             configuration.write_text(saved, encoding = 'utf-8')
 
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
-        browse = answer(monkeypatch, tokens)
+        browse, _ = answer(monkeypatch, tokens = tokens)
 
         assert threadvault.terminal.main(['setup']) == status
 
@@ -497,8 +510,44 @@ class TestTerminalCommandSetup:
 
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
         monkeypatch.setattr(slack, 'apps_connections_open', unittest.mock.Mock(side_effect = [slack_sdk.errors.SlackApiError('xxx', 'xxx'), {'url': 'wss://xxx'}]))
-        answer(monkeypatch, ['xoxb-xxx', 'xapp-xxx1', 'xoxb-xxx', 'xapp-xxx2'])
+        answer(monkeypatch, tokens = ['xoxb-xxx', 'xapp-xxx1', 'xoxb-xxx', 'xapp-xxx2'])
 
         assert threadvault.terminal.main(['setup']) == 0
         assert capsys.readouterr().err == 'error: xxx\nThe server responded with: xxx\n'
         assert dotenv.dotenv_values(configuration)['SLACK_APP_TOKEN'] == 'xapp-xxx2'
+
+    @pytest.mark.parametrize(('apps', 'codes', 'page', 'err', 'written'), APPS_SETUP)
+    def test_github(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        slack: slack_sdk.web.WebClient,
+        configuration: pathlib.Path,
+        apps: list[str],
+        codes: list[Exception | None],
+        page: str,
+        err: str,
+        written: dict[str, str]
+    ) -> None:
+
+        def connect(
+            _: str
+        ) -> slack_sdk.web.WebClient:
+
+            return slack
+
+        monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
+        browse, request = answer(monkeypatch, apps = apps, codes = codes)
+
+        assert threadvault.terminal.main(['setup']) == 0
+
+        captured = capsys.readouterr()
+        address: str = browse.call_args_list[1].args[0]
+        url = urllib.parse.urlsplit(address)
+
+        assert captured.err == err
+        assert 'ok: GitHub App: xxx\n' in captured.out
+        assert f'{url.scheme}://{url.netloc}{url.path}' == page
+        assert urllib.parse.parse_qs(url.query) == {'name': ['ThreadVault for xxx'], 'url': ['https://xxx.slack.com/'], 'public': ['false'], 'webhook_active': ['false'], 'contents': ['write'], 'administration': ['write'], 'metadata': ['read']}
+        assert request.call_args_list == [unittest.mock.call('xxx')] * len(codes)
+        assert {name: value for name, value in dotenv.dotenv_values(configuration).items() if name.startswith('GITHUB_APP_')} == written

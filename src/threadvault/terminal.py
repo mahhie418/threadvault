@@ -74,7 +74,7 @@ def _build() -> argparse.ArgumentParser:
     manifest.set_defaults(handler = _manifest)
     doctor = commands.add_parser('doctor', help = 'check the settings, Slack, git, GitHub and the destination')
     doctor.set_defaults(handler = _doctor)
-    setup = commands.add_parser('setup', help = 'create the Slack app and write its tokens into the settings file')
+    setup = commands.add_parser('setup', help = 'create the Slack app and register the GitHub App, writing the settings file')
     setup.set_defaults(handler = _setup)
 
     return parser
@@ -245,9 +245,9 @@ def _setup(
 
     try:
 
-        _create()
+        _create(); _register()
 
-    except threadvault.configuration.ConfigurationError as error:
+    except (threadvault.configuration.ConfigurationError, slack_sdk.errors.SlackApiError) as error:
 
         print(f'error: {error}', file = sys.stderr)
 
@@ -273,7 +273,7 @@ def _create() -> None:
 
     while True:
 
-        bot, app = _ask('Bot User OAuth Token', settings.slack_bot_token), _ask('App-Level Token', settings.slack_app_token)
+        bot, app = _ask('Bot User OAuth Token', settings.slack_bot_token, secret = True), _ask('App-Level Token', settings.slack_app_token, secret = True)
 
         try: identity = _identify(bot, app)
         except (threadvault.configuration.ConfigurationError, slack_sdk.errors.SlackApiError) as error: print(f'error: {error}', file = sys.stderr)
@@ -295,11 +295,46 @@ def _identify(
 
     return identity
 
+def _register() -> None:
+
+    settings = threadvault.configuration.load()
+    identity = threadvault.slack.api.connect(settings.slack_bot_token).auth_test()
+    organisation = _ask('GitHub organisation to own the vault, or nothing for your own account', '', secret = False)
+    query = urllib.parse.urlencode({'name': f"ThreadVault for {identity.get('team', '')}", 'url': identity.get('url', ''), 'public': 'false', 'webhook_active': 'false', 'contents': 'write', 'administration': 'write', 'metadata': 'read'})
+    url = f'https://github.com/organizations/{urllib.parse.quote(organisation)}/settings/apps/new?{query}' if organisation else f'https://github.com/settings/apps/new?{query}'
+
+    print(f'Register the GitHub App: {url}')
+    print('Also check Enable Device Flow, create the GitHub App and copy its Client ID. Its slug ends the address of its public page, https://github.com/apps/<slug>. Then install it on the account that is to own the vault.', flush = True)
+    webbrowser.open(url)
+
+    while True:
+
+        client, slug = _ask('Client ID', settings.github_app_client_id, secret = False), _ask('Slug', settings.github_app_slug, secret = False)
+
+        try: _confirm(client, slug)
+        except (threadvault.configuration.ConfigurationError, threadvault.github.oauth.OAuthError) as error: print(f'error: {error}', file = sys.stderr)
+        else: break
+
+    threadvault.configuration.save({'GITHUB_APP_CLIENT_ID': client, 'GITHUB_APP_SLUG': slug})
+
+    print(f'ok: GitHub App: {slug}')
+
+def _confirm(
+    client: str,
+    slug: str
+) -> None:
+
+    threadvault.configuration.load({'GITHUB_APP_CLIENT_ID': client, 'GITHUB_APP_SLUG': slug}).require('github_app_client_id', 'github_app_slug')
+    threadvault.github.oauth.request(client)
+
 def _ask(
     question: str,
-    current: str
+    current: str,
+    *,
+    secret: bool
 ) -> str:
 
-    answer = getpass.getpass(f'{question}{' [keep current]' if current else ''}: ')
+    hint = (' [keep current]' if secret else f' [{current}]') if current else ''
+    answer = (getpass.getpass if secret else input)(f'{question}{hint}: ')
 
     return answer.strip() or current
