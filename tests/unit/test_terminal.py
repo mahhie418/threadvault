@@ -104,8 +104,8 @@ Open the link below to create the Slack app. Its settings are filled in from the
 
 >> http://127.0.0.1:0/slack
 
-1. Choose the workspace, then follow the pages to create the app.
-2. Choose Install to Workspace and allow the access the app asks for.
+1. Select the workspace, then follow the pages to create the app.
+2. Select Install to Workspace and allow the access the app asks for.
 3. In OAuth & Permissions, copy the Bot User OAuth Token (it starts with xoxb-).
 4. In Basic Information, under App-Level Tokens, generate a token with the connections:write scope and copy it (it starts with xapp-).
 
@@ -123,9 +123,9 @@ Open the link below to register the GitHub App. Its settings are filled in.
 >> http://127.0.0.1:0/github
 
 1. Tick Enable Device Flow.
-2. Choose Create GitHub App, then copy the Client ID.
+2. Select Create GitHub App, then copy the Client ID.
 3. Copy the app slug: the last part of the public link, https://github.com/apps/<slug>.
-4. Choose Install App and install it on the account that keeps the vault.
+4. Select Install App and install it on the account that keeps the vault.
 
 Paste the Client ID and the app slug.
 
@@ -137,7 +137,7 @@ App slug:
 Choose who owns ThreadVault in Slack, and copy their member ID.
 
 1. In Slack, open their profile.
-2. Choose ⋮ (More), then Copy member ID.
+2. Select ⋮ (More), then Copy member ID.
 
 Member ID of the owner:
 

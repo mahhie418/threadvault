@@ -324,7 +324,7 @@ def _create(
 
     print('\nOpen the link below to create the Slack app. Its settings are filled in from the manifest.')
     _link(shortener.shorten('slack', url))
-    _steps('Choose the workspace, then follow the pages to create the app.', 'Choose Install to Workspace and allow the access the app asks for.', 'In OAuth & Permissions, copy the Bot User OAuth Token (it starts with xoxb-).', 'In Basic Information, under App-Level Tokens, generate a token with the connections:write scope and copy it (it starts with xapp-).')
+    _steps('Select the workspace, then follow the pages to create the app.', 'Select Install to Workspace and allow the access the app asks for.', 'In OAuth & Permissions, copy the Bot User OAuth Token (it starts with xoxb-).', 'In Basic Information, under App-Level Tokens, generate a token with the connections:write scope and copy it (it starts with xapp-).')
 
     while True:
 
@@ -368,7 +368,7 @@ def _register(
 
     print('\nOpen the link below to register the GitHub App. Its settings are filled in.')
     _link(shortener.shorten('github', url))
-    _steps('Tick Enable Device Flow.', 'Choose Create GitHub App, then copy the Client ID.', 'Copy the app slug: the last part of the public link, https://github.com/apps/<slug>.', 'Choose Install App and install it on the account that keeps the vault.')
+    _steps('Tick Enable Device Flow.', 'Select Create GitHub App, then copy the Client ID.', 'Copy the app slug: the last part of the public link, https://github.com/apps/<slug>.', 'Select Install App and install it on the account that keeps the vault.')
 
     while True:
 
@@ -397,7 +397,7 @@ def _appoint() -> None:
     client = threadvault.slack.api.connect(settings.slack_bot_token)
 
     print('\nChoose who owns ThreadVault in Slack, and copy their member ID.')
-    _steps('In Slack, open their profile.', 'Choose ⋮ (More), then Copy member ID.')
+    _steps('In Slack, open their profile.', 'Select ⋮ (More), then Copy member ID.')
 
     while True:
 
