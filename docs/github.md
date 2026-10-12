@@ -11,25 +11,25 @@ ThreadVault writes the vault through a GitHub App that you register for yourself
    - Tick **Enable Device Flow**.
    - Leave **Callback URL** empty.
 4. Under **Webhook**, untick **Active**.
-5. Under **Permissions → Repository permissions**, choose:
+5. Under **Permissions → Repository permissions**, select:
    - **Contents**: Read and write.
    - **Metadata**: Read-only. GitHub sets this by itself.
    - **Administration**: Read and write, only if ThreadVault should create the repository of the vault. Otherwise leave it at No access and create the repository yourself, because this permission also allows deleting repositories.
-6. Under **Where can this GitHub App be installed?**, choose **Only on this account**, unless the vault belongs to another account.
+6. Under **Where can this GitHub App be installed?**, select **Only on this account**, unless the vault belongs to another account.
 7. Select **Create GitHub App**.
 
-## Note the client ID and the slug
+## Note the Client ID and the app slug
 
 On the page of the app:
 
 - The **Client ID** goes to `GITHUB_APP_CLIENT_ID`.
-- The slug is the last part of the public link of the app, `https://github.com/apps/<slug>`, and goes to `GITHUB_APP_SLUG`.
+- The app slug is the last part of the public link of the app, `https://github.com/apps/<slug>`, and goes to `GITHUB_APP_SLUG`.
 
 ThreadVault needs neither a private key nor a client secret. If GitHub asks for a private key before it lets you install the app, generate one and delete it straight away; GitHub keeps only its public half.
 
 ## Install the app
 
-Select **Install App** and the account that keeps the vault. Choose the repository of the vault, or **All repositories**. A repository that ThreadVault creates joins the installation by itself.
+Select **Install App** and the account that keeps the vault. Select the repository of the vault, or **All repositories**. A repository that ThreadVault creates joins the installation by itself.
 
 ## Connect your GitHub account
 
