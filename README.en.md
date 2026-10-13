@@ -100,6 +100,7 @@ Restart the Slack app after you change the settings file.
 |---|---|
 | `threadvault setup` | Creates the Slack app, registers the GitHub App, chooses the owner and starts the Slack app at login, writing the settings file |
 | `threadvault start` | Runs the Slack app until it is stopped. `--log FILE` appends the output to a file. |
+| `threadvault stop` | Stops the Slack app and stops it from starting at login (macOS) |
 | `threadvault doctor` | Checks the settings, Slack, git, GitHub and the destination |
 | `threadvault connect` | Connects GitHub from the terminal, as **Connect GitHub** does in App Home |
 | `threadvault backup --out DIR` | Backs up the workspace once into a local folder |
@@ -123,7 +124,7 @@ To restart the Slack app, for example after changing the settings file:
 
 To stop the Slack app and stop it from starting at login:
 
-- macOS: `launchctl bootout gui/$(id -u)/threadvault`, then delete `~/Library/LaunchAgents/threadvault.plist`.
+- macOS: `threadvault stop`
 - Windows: `schtasks /End /TN threadvault` and `schtasks /Delete /TN threadvault /F`, then delete `threadvault.xml` in the data folder.
 
 ## Update and uninstall

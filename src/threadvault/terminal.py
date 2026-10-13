@@ -77,6 +77,8 @@ def _build() -> argparse.ArgumentParser:
     start = commands.add_parser('start', help = 'run the Slack app until it is stopped')
     start.set_defaults(handler = _start)
     start.add_argument('--log', type = pathlib.Path, help = 'file to append the output to', metavar = 'FILE')
+    stop = commands.add_parser('stop', help = 'stop the Slack app and stop it from starting at login')
+    stop.set_defaults(handler = _stop)
     manifest = commands.add_parser('manifest', help = 'print the manifest for creating the Slack app')
     manifest.set_defaults(handler = _manifest)
     doctor = commands.add_parser('doctor', help = 'check the settings, Slack, git, GitHub and the destination')
@@ -197,6 +199,24 @@ def _serve() -> int:
         _report('ERROR', str(error))
 
         return 1
+
+    return 0
+
+def _stop(
+    _: argparse.Namespace
+) -> int:
+
+    try:
+
+        registration = threadvault.autostart.unregister()
+
+    except threadvault.autostart.AutostartError as error:
+
+        _report('ERROR', str(error))
+
+        return 1
+
+    _report('OK', f'autostart: removed {registration}' if registration else 'autostart: not registered')
 
     return 0
 

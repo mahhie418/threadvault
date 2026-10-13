@@ -104,6 +104,40 @@ def test_autostart_end_failure(
     assert run.call_args_list[-1].args[0][1:] == ['/Run', '/TN', 'threadvault']
     assert len(run.call_args_list) == 3
 
+def test_autostart_agent_removal(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+
+    agent = pathlib.Path(os.path.join(tmp_path, 'Library', 'LaunchAgents', 'threadvault.plist'))
+    agent.parent.mkdir(parents = True)
+    agent.write_text('xxx', encoding = 'utf-8')
+    run = unittest.mock.Mock()
+
+    monkeypatch.setattr(sys, 'platform', 'darwin')
+    monkeypatch.setattr(os, 'getuid', lambda: 501, raising = False)
+    monkeypatch.setattr(pathlib.Path, 'home', lambda: tmp_path)
+    monkeypatch.setattr(subprocess, 'run', run)
+
+    assert threadvault.autostart.unregister() == str(agent)
+    assert not agent.exists()
+    assert [call.args[0] for call in run.call_args_list] == [['/bin/launchctl', 'bootout', 'gui/501/threadvault']]
+
+def test_autostart_agent_absence(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+
+    run = unittest.mock.Mock(return_value = subprocess.CompletedProcess('xxx', 3))
+
+    monkeypatch.setattr(sys, 'platform', 'darwin')
+    monkeypatch.setattr(os, 'getuid', lambda: 501, raising = False)
+    monkeypatch.setattr(pathlib.Path, 'home', lambda: tmp_path)
+    monkeypatch.setattr(subprocess, 'run', run)
+
+    assert threadvault.autostart.unregister() is None
+    assert [call.args[0] for call in run.call_args_list] == [['/bin/launchctl', 'bootout', 'gui/501/threadvault']]
+
 def test_autostart_platform_support() -> None:
 
     assert sorted(threadvault.autostart.PLATFORMS) == ['darwin', 'win32']
@@ -116,3 +150,11 @@ def test_autostart_platform_rejection(
     monkeypatch.setattr(sys, 'platform', 'xxx')
 
     with pytest.raises(threadvault.autostart.AutostartError, match = r'not supported on xxx$'): threadvault.autostart.register(pathlib.Path(os.path.join(tmp_path, 'xxx.log')))
+
+def test_autostart_removal_rejection(
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+
+    monkeypatch.setattr(sys, 'platform', 'xxx')
+
+    with pytest.raises(threadvault.autostart.AutostartError, match = r'not supported on xxx$'): threadvault.autostart.unregister()

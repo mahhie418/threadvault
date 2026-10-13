@@ -42,6 +42,11 @@ ENVIRONMENTS_START = [
     ({'SLACK_APP_TOKEN': '', 'THREADVAULT_OWNER_ID': '', 'GITHUB_APP_CLIENT_ID': '', 'GITHUB_APP_SLUG': ''}, 1, '[ERROR] Missing required environment variables: SLACK_APP_TOKEN, THREADVAULT_OWNER_ID, GITHUB_APP_CLIENT_ID, GITHUB_APP_SLUG\n', [])
 ]
 
+REGISTRATIONS_STOP = [
+    ('xxx', '[OK] autostart: removed xxx\n'),
+    (None, '[OK] autostart: not registered\n')
+]
+
 NOW = datetime.datetime.now(datetime.UTC)
 
 TOKENS_SAVED = threadvault.github.oauth.Tokens(access_token = 'ghu_xxx', access_expiry = NOW + datetime.timedelta(hours = 8), refresh_token = 'ghr_xxx', refresh_expiry = NOW + datetime.timedelta(days = 184))
@@ -473,6 +478,33 @@ class TestTerminalCommandStart:
         assert threadvault.terminal.main(['start', '--log', str(log)]) == 0
         assert capsys.readouterr() == ('', '')
         assert log.read_text(encoding = 'utf-8') == '[ERROR] Missing required environment variables: SLACK_APP_TOKEN\nxoxb-xxx\n'
+
+class TestTerminalCommandStop:
+
+    @pytest.mark.parametrize(('registration', 'out'), REGISTRATIONS_STOP)
+    def test_registration(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        registration: str | None,
+        out: str
+    ) -> None:
+
+        monkeypatch.setattr(threadvault.autostart, 'unregister', unittest.mock.Mock(return_value = registration))
+
+        assert threadvault.terminal.main(['stop']) == 0
+        assert capsys.readouterr() == (out, '')
+
+    def test_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]
+    ) -> None:
+
+        monkeypatch.setattr(threadvault.autostart, 'unregister', unittest.mock.Mock(side_effect = threadvault.autostart.AutostartError('xxx')))
+
+        assert threadvault.terminal.main(['stop']) == 1
+        assert capsys.readouterr() == ('', '[ERROR] xxx\n')
 
 class TestTerminalCommandManifest:
 

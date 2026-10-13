@@ -13,7 +13,7 @@ PLATFORMS = frozenset({'darwin', 'win32'})
 
 class AutostartError(Exception):
 
-    """Raised when the Slack app cannot be registered to start at login."""
+    """Raised when the start of the Slack app at login cannot be registered or removed."""
 
 def register(
     log: pathlib.Path
@@ -44,6 +44,24 @@ def register(
     if sys.platform == 'win32': return _schedule(log)
 
     raise AutostartError(f'Starting at login is not supported on {sys.platform}')
+
+def unregister() -> str | None:
+
+    """Stops the Slack app that starts at login, and removes its registration.
+
+    On macOS, the launchd agent is booted out, which stops the Slack app, and
+    its file is deleted.
+
+    Returns:
+        Where the registration was described, or None when there was none.
+
+    Raises:
+        AutostartError: This system is not supported.
+    """
+
+    if sys.platform == 'darwin': return _unload(os.getuid())
+
+    raise AutostartError(f'Removing the start at login is not supported on {sys.platform}')
 
 def _launch(
     log: pathlib.Path,
@@ -80,6 +98,20 @@ def _schedule(
     except subprocess.CalledProcessError as error: raise AutostartError(f'Task Scheduler could not start {LABEL}: {error.stderr.strip()}') from None
 
     return str(task)
+
+def _unload(
+    user: int
+) -> str | None:
+
+    agent = pathlib.Path(os.path.join(pathlib.Path.home(), 'Library', 'LaunchAgents', f'{LABEL}.plist'))
+
+    subprocess.run(['/bin/launchctl', 'bootout', f'gui/{user}/{LABEL}'], capture_output = True, check = False)
+
+    if not agent.exists(): return None
+
+    agent.unlink()
+
+    return str(agent)
 
 def _fill(
     name: str,
