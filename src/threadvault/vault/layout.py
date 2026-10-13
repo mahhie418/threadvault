@@ -46,6 +46,22 @@ def assign(
 
     return pasts | names
 
+def validate(
+    name: str
+) -> bool:
+
+    """Checks whether a directory name is safe on every supported platform.
+
+    Args:
+        name: Directory name from the state file.
+
+    Returns:
+        Whether the name is non-empty, contains no invalid characters and is
+        not reserved for a Windows device.
+    """
+
+    return bool(name) and _PATTERN_CHARACTERS_INVALID.search(name) is None and not ntpath.isreserved(name)
+
 def _sanitise(
     name: str
 ) -> str:

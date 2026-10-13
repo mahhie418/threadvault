@@ -123,7 +123,7 @@ def run(
 
     Raises:
         slack_sdk.errors.SlackApiError: Slack refused a request.
-        threadvault.vault.state.StateError: The state file of the vault cannot be used.
+        threadvault.vault.state.StateError: The vault contains invalid state or unsafe paths.
     """
 
     url = client.auth_test().get('url', '')
@@ -228,7 +228,7 @@ def publish(
         threadvault.github.rest.GitHubError: GitHub refused a request, or could not be reached.
         threadvault.vault.repository.GitError: git is missing or too old, or a git command failed.
         slack_sdk.errors.SlackApiError: Slack refused a request.
-        threadvault.vault.state.StateError: The state file of the vault cannot be used.
+        threadvault.vault.state.StateError: The vault contains invalid state or unsafe paths.
     """
 
     with hold(directory):
@@ -374,14 +374,35 @@ def _move(
 
     for parent in parents:
 
-        for source, target in steps:
+        if parent.resolve().parent != parent.parent.resolve(): raise threadvault.vault.state.StateError(f'{parent} points outside the vault')
 
-            path = pathlib.Path(os.path.join(parent, source))
+        for directory in set(previous.values()) | set(directories.values()): _locate(parent, directory)
 
-            if path.exists(): path.rename(pathlib.Path(os.path.join(parent, target)))
+        paths = [(_locate(parent, source), _locate(parent, target)) for source, target in steps]
+
+        for source, target in paths:
+
+            if source.exists(): source.rename(target)
+
+def _locate(
+    parent: pathlib.Path,
+    name: str
+) -> pathlib.Path:
+
+    path = pathlib.Path(os.path.join(parent, name))
+
+    if path.resolve().parent != parent.resolve(): raise threadvault.vault.state.StateError(f'{path} points outside {parent}')
+
+    return path
 
 def _read(
     directory: pathlib.Path
 ) -> list[dict[str, typing.Any]]:
 
-    return [message for path in sorted(directory.glob('*.json')) for message in json.loads(path.read_text(encoding = 'utf-8'))]
+    paths = sorted(directory.glob('*.json'))
+
+    for path in paths:
+
+        if path.is_symlink() or not path.is_file(): raise threadvault.vault.state.StateError(f'{path} is not a regular message file')
+
+    return [message for path in paths for message in json.loads(path.read_text(encoding = 'utf-8'))]

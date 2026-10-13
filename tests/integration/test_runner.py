@@ -28,6 +28,9 @@ REPOSITORY = f'{threadvault.github.rest.API_URL}/repos/xxx/xxx'
 
 MESSAGES_DELETION = {'1510880400.000000', '1791075600.000001'}
 
+MODES_TRAVERSAL = ['relative', 'absolute']
+TARGETS_SYMLINK = ['external', 'internal', 'missing']
+
 THREAD_INSERTION = [
     {'latest_reply': '1791160200.000000', 'reply_count': 1, 'text': 'xxx', 'thread_ts': '1791158400.000000', 'ts': '1791158400.000000', 'type': 'message', 'user': 'UXXX1'},
     {'parent_user_id': 'UXXX1', 'text': 'xxx', 'thread_ts': '1791158400.000000', 'ts': '1791160200.000000', 'type': 'message', 'user': 'UXXX2'}
@@ -494,3 +497,113 @@ def test_runner_vault_git(
     with respx.mock, pytest.raises(threadvault.vault.repository.GitError, match = 'or newer is needed'): publish(slack, directory)
 
     assert not directory.exists()
+
+@pytest.mark.parametrize('mode', MODES_TRAVERSAL)
+def test_runner_safety_path(
+    tmp_path: pathlib.Path,
+    slack: slack_sdk.web.WebClient,
+    mode: str
+) -> None:
+
+    vault = pathlib.Path(os.path.join(tmp_path, 'vault'))
+    vault.mkdir()
+
+    external = pathlib.Path(os.path.join(tmp_path, 'xxx'))
+    external.mkdir()
+
+    file = pathlib.Path(os.path.join(external, 'xxx.txt'))
+    file.write_text('xxx', encoding = 'utf-8')
+
+    pathlib.Path(os.path.join(vault, 'raw')).mkdir()
+    threadvault.vault.state.save(vault, {'CXXX1': str(external) if mode == 'absolute' else '../../xxx'})
+
+    with pytest.raises(threadvault.vault.state.StateError): run(slack, vault)
+
+    assert file.read_text(encoding = 'utf-8') == 'xxx'
+
+def test_runner_safety_symlink(
+    tmp_path: pathlib.Path,
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    vault = pathlib.Path(os.path.join(tmp_path, 'vault'))
+
+    raw = pathlib.Path(os.path.join(vault, 'raw'))
+    raw.mkdir(parents = True)
+
+    external = pathlib.Path(os.path.join(tmp_path, 'xxx'))
+    external.mkdir()
+
+    link = pathlib.Path(os.path.join(raw, 'xxx'))
+
+    try: link.symlink_to(external, target_is_directory = True)
+    except OSError: pytest.skip('Creating symlinks is not allowed')
+
+    threadvault.vault.state.save(vault, {'CXXX1': 'xxx'})
+
+    with pytest.raises(threadvault.vault.state.StateError): run(slack, vault)
+
+    assert link.is_symlink()
+    assert list(external.iterdir()) == []
+
+@pytest.mark.parametrize('target', TARGETS_SYMLINK)
+def test_runner_safety_message(
+    tmp_path: pathlib.Path,
+    slack: slack_sdk.web.WebClient,
+    target: str
+) -> None:
+
+    vault = pathlib.Path(os.path.join(tmp_path, 'vault'))
+
+    run(slack, vault)
+
+    directory = pathlib.Path(os.path.join(vault, 'raw', 'general'))
+    file = pathlib.Path(os.path.join(directory if target == 'internal' else tmp_path, 'xxx.json'))
+    text = json.dumps([{'text': 'xxx', 'ts': '1510880401.000000', 'type': 'message', 'user': 'UXXX1'}])
+
+    if target != 'missing': file.write_text(text, encoding = 'utf-8')
+
+    link = pathlib.Path(os.path.join(directory, '2017-11-17.json'))
+    link.unlink()
+
+    try: link.symlink_to(file)
+    except OSError: pytest.skip('Creating symlinks is not allowed')
+
+    with pytest.raises(threadvault.vault.state.StateError, match = 'regular message file'): run(slack, vault)
+
+    assert link.is_symlink()
+
+    if target != 'missing': assert file.read_text(encoding = 'utf-8') == text
+
+def test_runner_safety_publication(
+    tmp_path: pathlib.Path,
+    remote: pathlib.Path,
+    git: collections.abc.Callable[..., str],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    file = pathlib.Path(os.path.join(tmp_path, 'xxx.json'))
+    text = json.dumps([{'text': 'xxx', 'ts': '1510880401.000000', 'type': 'message', 'user': 'UXXX1'}])
+    file.write_text(text, encoding = 'utf-8')
+    seed = threadvault.vault.repository.Repository(pathlib.Path(os.path.join(tmp_path, 'xxx')), token = None, name = 'xxx', email = 'xxx@xxx.xxx')
+    seed.clone(str(remote))
+    directory = pathlib.Path(os.path.join(seed.path, 'raw', 'general'))
+    directory.mkdir(parents = True)
+    link = pathlib.Path(os.path.join(directory, '2017-11-17.json'))
+
+    try: link.symlink_to('../../../xxx.json')
+    except OSError: pytest.skip('Creating symlinks is not allowed')
+
+    threadvault.vault.state.save(seed.path, {'CXXX1': 'general'})
+    seed.commit('xxx')
+    seed.push()
+
+    with respx.mock:
+
+        respx.get(REPOSITORY).respond(200, json = {'clone_url': str(remote), 'full_name': 'xxx/xxx', 'private': True})
+        respx.get(f'{threadvault.github.rest.API_URL}/user').respond(200, json = {'id': 1, 'login': 'xxx'})
+
+        with pytest.raises(threadvault.vault.state.StateError, match = 'regular message file'): publish(slack, pathlib.Path(os.path.join(tmp_path, 'clone')))
+
+    assert git('show', 'main:raw/general/2017-11-17.json', directory = remote) == '../../../xxx.json'
+    assert file.read_text(encoding = 'utf-8') == text
