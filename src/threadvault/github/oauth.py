@@ -20,7 +20,8 @@ class OAuthError(Exception):
 
     Attributes:
         reason: Error code from GitHub, such as expired_token or access_denied,
-                or connection when GitHub could not be reached.
+                connection when GitHub could not be reached, or status when
+                GitHub answered with an error status.
     """
 
     def __init__(
@@ -32,7 +33,7 @@ class OAuthError(Exception):
         """Initialises the error.
 
         Args:
-            reason: Error code from GitHub, or connection.
+            reason: Error code from GitHub, connection or status.
             message: Explanation for the admin.
         """
 
@@ -165,8 +166,10 @@ def _post(
     form: dict[str, str]
 ) -> dict[str, typing.Any]:
 
-    try: response = httpx.post(url, data = form, headers = {'Accept': 'application/json'}, timeout = TIMEOUT_LIMIT).raise_for_status()
+    try: response = httpx.post(url, data = form, headers = {'Accept': 'application/json'}, timeout = TIMEOUT_LIMIT)
     except httpx.HTTPError as error: raise OAuthError('connection', f'GitHub could not be reached: {error}') from error
+
+    if response.is_error: raise OAuthError('status', f'GitHub answered {response.status_code} to POST {response.url.path}: {response.text}')
 
     return response.json()
 
