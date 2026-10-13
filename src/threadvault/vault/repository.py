@@ -125,7 +125,7 @@ class Repository:
             GitError: git failed.
         """
 
-        self._git('add', '--all')
+        self._git('add', '--all', '--force')
 
         if not self._git('status', '--porcelain'): return False
 

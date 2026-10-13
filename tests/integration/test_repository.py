@@ -8,6 +8,9 @@ import unittest.mock
 import pytest
 
 import threadvault.vault.repository
+import threadvault.vault.state
+
+SOURCES_IGNORED = ['vault', 'global']
 
 def create(
     remote: pathlib.Path,
@@ -145,3 +148,38 @@ def test_repository_token_isolation(
     assert all(header in call.kwargs['env'].values() for call in run.call_args_list)
     assert 'ghu_xxx' not in configuration
     assert 'x-access-token' not in configuration
+
+@pytest.mark.parametrize('source', SOURCES_IGNORED)
+def test_repository_ignored_backup(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    remote: pathlib.Path,
+    source: str
+) -> None:
+
+    repository = create(remote, pathlib.Path(os.path.join(tmp_path, 'clone')))
+
+    if source == 'vault':
+
+        write(repository, '.gitignore', 'raw/\n')
+
+    else:
+
+        configuration = pathlib.Path(os.path.join(tmp_path, 'configuration'))
+        file = pathlib.Path(os.path.join(configuration, 'git', 'ignore'))
+        file.parent.mkdir(parents = True, exist_ok = True)
+        file.write_text('*.json\n', encoding = 'utf-8')
+        monkeypatch.setenv('XDG_CONFIG_HOME', str(configuration))
+
+    raw = pathlib.Path(os.path.join(repository.path, 'raw'))
+    raw.mkdir()
+    pathlib.Path(os.path.join(raw, 'xxx.json')).write_text('[]\n', encoding = 'utf-8')
+    threadvault.vault.state.save(repository.path, {'CXXX1': 'xxx'})
+
+    assert repository.commit('xxx')
+
+    repository.push()
+    repository.refresh()
+
+    assert pathlib.Path(os.path.join(raw, 'xxx.json')).read_text(encoding = 'utf-8') == '[]\n'
+    assert threadvault.vault.state.load(repository.path) == {'CXXX1': 'xxx'}
