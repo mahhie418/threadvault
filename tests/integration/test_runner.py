@@ -418,8 +418,10 @@ def test_runner_vault_publication(
         respx.get(REPOSITORY).mock(side_effect = [httpx.Response(404, json = {'message': 'Not Found'}), *[found] * 9])
         creation = respx.post(f'{threadvault.github.rest.API_URL}/user/repos').respond(201, json = {'clone_url': str(remote), 'full_name': 'xxx/xxx', 'private': True})
         respx.get(f'{threadvault.github.rest.API_URL}/user').respond(200, json = {'id': 1, 'login': 'xxx'})
+
         results, commit = publish(slack, directory)
         log = git('log', '--format=%s %ae', 'main', directory = remote).splitlines()
+
         publish(slack, directory)
 
     assert creation.call_count == 1

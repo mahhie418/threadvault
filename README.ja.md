@@ -1,6 +1,6 @@
 # ThreadVault
 
-[English](README.en.md)
+[English](https://github.com/mahhie418/threadvault/blob/main/README.en.md)
 
 ThreadVault は、Slack のワークスペースを GitHub のプライベートリポジトリ (vault) にバックアップします。vault には、Slack のエクスポートと同じ形式の JSON と、人や AI サービスが読みやすいように Markdown にした会話の記録が入ります。
 
@@ -41,14 +41,14 @@ setup は次の 4 つの段階を順に案内し、入力した内容を設定�
 3. **オーナー**: Slack で ThreadVault のオーナーにする人のメンバー ID を貼り付けます。メンバー ID は、Slack でその人のプロフィールを開き、⋮ (その他) の「メンバー ID をコピー」でコピーできます。
 4. **確認と自動起動**: 設定、Slack、git を確認してから、ログイン時に Slack app を自動で起動するかどうかを聞きます。
 
-設定を変えるときは、setup をもう一度実行します。質問の後ろの [ ] に今の値が表示されているときは、Enter を押すとその値のまま進めます。Slack app を手動で作成する方法は [Creating the Slack app](docs/slack.md) に、GitHub App を手動で登録する方法は [Registering the GitHub App](docs/github.md) にあります (どちらも英語)。
+設定を変えるときは、setup をもう一度実行します。すでに答えてある質問では、後ろの [ ] に今の値 (トークンでは `keep current`) が表示され、Enter を押すとその値のまま進めます。Slack app を手動で作成する方法は [Creating the Slack app](https://github.com/mahhie418/threadvault/blob/main/docs/slack.md) に、GitHub App を手動で登録する方法は [Registering the GitHub App](https://github.com/mahhie418/threadvault/blob/main/docs/github.md) にあります (どちらも英語)。
 
 ## GitHub との連携と保存先
 
 Slack app を動かした状態で、Slack で ThreadVault を開き、ホームタブを表示します。
 
 1. 「GitHub と連携する」を選択し、表示されたページを開いてコードを入力します。
-2. 「保存先を選ぶ」を選択して GitHub App がアクセスできるプライベートリポジトリを選ぶか、同じ画面の「新しいリポジトリを作成する」を選択してプライベートリポジトリを作成します。
+2. 「保存先を選択する」を選択して GitHub App がアクセスできるプライベートリポジトリを選ぶか、同じ画面の「新しいリポジトリを作成する」を選択してプライベートリポジトリを作成します。
 3. 「設定を変更する」を選択して、毎日のバックアップの時刻、バックアップするチャンネル、添付ファイル、Markdown の言語を設定します。
 4. 「今すぐバックアップ」を選択して「開始」を選択するか、毎日のバックアップを待ちます。
 
@@ -121,10 +121,16 @@ Slack app を再起動するには (設定ファイルを変更したときな�
 - Windows: `schtasks /End /TN threadvault` を実行してから、`schtasks /Run /TN threadvault` を実行します。
 - 自動起動を使っていない場合: `threadvault start` を Ctrl+C で止めて、もう一度実行します。
 
-ログイン時の自動起動をやめるには:
+Slack app を止めて、ログイン時の自動起動をやめるには:
 
 - macOS: `launchctl bootout gui/$(id -u)/threadvault` を実行して、`~/Library/LaunchAgents/threadvault.plist` を削除します。
-- Windows: `schtasks /Delete /TN threadvault /F` を実行して、データフォルダの `threadvault.xml` を削除します。
+- Windows: `schtasks /End /TN threadvault` と `schtasks /Delete /TN threadvault /F` を実行して、データフォルダの `threadvault.xml` を削除します。
+
+## 更新とアンインストール
+
+ThreadVault を新しい版に更新するには、`uv tool upgrade threadvault` を実行してから、Slack app を再起動します。新しい版で manifest が変わったときは、[Update the app](https://github.com/mahhie418/threadvault/blob/main/docs/slack.md#update-the-app) (英語) の手順で Slack app も更新します。
+
+ThreadVault をアンインストールするには、上の手順で Slack app とログイン時の自動起動を止めるか、`threadvault start` を Ctrl+C で止めてから、`uv tool uninstall threadvault` を実行します。設定ファイルとデータフォルダは残るので、要らなければ削除してください。Slack app、GitHub App、vault も、Slack と GitHub で削除するまで残ります。
 
 ## vault の中身
 

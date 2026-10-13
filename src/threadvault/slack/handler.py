@@ -53,19 +53,14 @@ def register(
     `threadvault.slack.permission.restrict` makes sure. When the permissions
     or the ownership change, both the admin and the owner hear of it by
     direct message, and the owner and the allowed admins hear by direct
-    message when GitHub is connected or disconnected, or when the destination
-    is chosen or created. A backup started from the App Home runs in the
-    background, one at a time, as `threadvault.worker.Worker` makes sure, and
-    the App Home of whoever started it shows the backup while it runs. Every
-    App Home shows how the last backup ended, and the owner and the allowed
-    admins hear by direct message when a backup fails. A backup started from
-    the App Home can fetch every channel in full, deleting nothing. Once the
-    destination is chosen, the daily backup runs at the time in the settings
-    of the workspace, and one missed while the app was stopped runs as soon
-    as the app runs again. The settings say whether it runs and its time and
-    time zone, which the Markdown follows too, which channels backups cover
-    and whether the bot joins the public ones first, whether they save
-    attached files and up to which size, and the language of the Markdown.
+    message when GitHub is connected or disconnected, when the destination
+    is chosen or created, or when a backup fails. A backup started from the
+    App Home runs in the background, one at a time, as
+    `threadvault.worker.Worker` makes sure, and the App Home of whoever
+    started it shows the backup while it runs. Once the destination is
+    chosen, the daily backup runs at the time in the settings of the
+    workspace, and one missed while the app was stopped runs as soon as the
+    app runs again.
 
     A reply to a thread marks the thread, and the next backup fetches the
     marked threads again, so that it does not miss a reply to a thread older

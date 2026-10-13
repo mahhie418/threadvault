@@ -72,25 +72,22 @@ def home(
     and a button at the right when the viewer may act on it. Headings group
     the items about the backup, GitHub and the owner actions.
 
-    Everyone sees when the last backup ended and whether it succeeded, and
-    when the daily backup runs next. Only the owner and the admins allowed to
-    operate the app see anything about GitHub: the state of the connection,
-    the destination, and the commit that the last backup left in the vault
-    or why it failed.
+    Everyone sees when the last backup ended and whether it succeeded,
+    whether a backup is running, and when the daily backup runs next. The
+    owner and the admins also see their own role.
 
-    While a backup is running, everyone sees so. Otherwise, while GitHub is
-    connected and the destination is chosen, the owner and the admins allowed
-    to operate the app see a button that backs up the workspace at once.
-
-    The owner and the admins also see their own role.
-    The owner and the admins allowed to operate the app see a button that
-    connects GitHub, connects it again once the connection has stopped
-    working, opens a modal to install the GitHub App while it has no
-    installation, or disconnects GitHub, a button that chooses the
-    destination, or creates a repository for it, while GitHub is connected,
-    and a button that opens the settings. The owner also sees red buttons,
-    each with a caution, that choose the admins allowed to operate the app
-    and that transfer the ownership to an admin.
+    Only the owner and the admins allowed to operate the app see anything
+    about GitHub: the state of the connection, the destination, and the
+    commit that the last backup left in the vault or why it failed. They
+    also see a button that backs up the workspace at once while GitHub is
+    connected, the destination is chosen and no backup is running, a button
+    that opens the settings, a button that connects GitHub, connects it
+    again once the connection has stopped working, opens a modal to install
+    the GitHub App while it has no installation, or disconnects GitHub, and
+    a button that chooses the destination, or creates a repository for it,
+    while GitHub is connected. The owner also sees red buttons, each with a
+    caution, that choose the admins allowed to operate the app and that
+    transfer the ownership to an admin.
 
     Args:
         github: State of the connection to GitHub: disconnected, expired when
@@ -469,12 +466,11 @@ def configure(
 
     """Builds the modal that changes the settings of the workspace, showing their current values.
 
-    The daily backup runs at its time in its time zone, which the Markdown
-    follows too from the next backup. Backups cover every channel that the
-    bot is in, or only the chosen ones among them, which the bot first joins
-    when they are public and joining is on, and save the attached files up
-    to a size, or none. The Markdown follows the chosen language too from
-    the next backup.
+    The daily backup runs at its time in its time zone. Backups cover every
+    channel that the bot is in, or only the chosen ones among them, which the
+    bot first joins when they are public and joining is on, and save the
+    attached files up to a size, or none. From the next backup, the Markdown
+    follows the time zone and the chosen language.
 
     Args:
         workspace: Settings of the workspace to show.

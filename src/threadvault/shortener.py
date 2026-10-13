@@ -17,9 +17,7 @@ class Shortener:
     """Serves short links on the loopback interface of this computer while it is open.
 
     A short link answers a browser on this computer with a redirect to its
-    long address, so that a terminal can show the short link instead. When
-    this computer does not let the server listen, shorten returns the long
-    address itself.
+    long address, so that a terminal can show the short link instead.
 
     Attributes:
         failure: Why the server could not listen, or None when it serves.

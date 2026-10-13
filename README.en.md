@@ -1,6 +1,6 @@
 # ThreadVault
 
-[日本語](README.ja.md)
+[日本語](https://github.com/mahhie418/threadvault/blob/main/README.ja.md)
 
 ThreadVault backs up a Slack workspace to a private GitHub repository, called the vault. The vault keeps the workspace in the JSON format of Slack's export, and as Markdown transcripts that people and AI services can read.
 
@@ -41,7 +41,7 @@ Setup walks you through four steps and writes your answers to the settings file:
 3. **Owner.** Paste the member ID of the person who owns ThreadVault in Slack. To copy it, open their profile in Slack and select ⋮ (More), then Copy member ID.
 4. **Check and autostart.** Setup checks the settings, Slack and git, then offers to start the Slack app automatically when you log in.
 
-To change an answer, run setup again. Where a question shows the current value in brackets, press Enter to keep it. [Creating the Slack app](docs/slack.md) and [Registering the GitHub App](docs/github.md) explain how to do the first two steps by hand.
+To change an answer, run setup again. A question that already has an answer shows it in brackets, or shows `[keep current]` for a token; press Enter to keep it. [Creating the Slack app](https://github.com/mahhie418/threadvault/blob/main/docs/slack.md) and [Registering the GitHub App](https://github.com/mahhie418/threadvault/blob/main/docs/github.md) explain how to do the first two steps by hand.
 
 ## Connect GitHub and choose the destination
 
@@ -121,10 +121,16 @@ To restart the Slack app, for example after changing the settings file:
 - Windows: `schtasks /End /TN threadvault`, then `schtasks /Run /TN threadvault`
 - Without autostart: stop `threadvault start` with Ctrl+C and run it again.
 
-To stop starting at login:
+To stop the Slack app and stop it from starting at login:
 
 - macOS: `launchctl bootout gui/$(id -u)/threadvault`, then delete `~/Library/LaunchAgents/threadvault.plist`.
-- Windows: `schtasks /Delete /TN threadvault /F`, then delete `threadvault.xml` in the data folder.
+- Windows: `schtasks /End /TN threadvault` and `schtasks /Delete /TN threadvault /F`, then delete `threadvault.xml` in the data folder.
+
+## Update and uninstall
+
+To update ThreadVault, run `uv tool upgrade threadvault`, then restart the Slack app. When a new version changes the manifest, also update the Slack app as [Update the app](https://github.com/mahhie418/threadvault/blob/main/docs/slack.md#update-the-app) describes.
+
+To uninstall ThreadVault, stop the Slack app and its start at login as above, or stop `threadvault start` with Ctrl+C, then run `uv tool uninstall threadvault`. The settings file and the data folder stay, so delete them if you no longer need them. The Slack app, the GitHub App and the vault stay too, until you delete them in Slack and GitHub.
 
 ## The vault
 

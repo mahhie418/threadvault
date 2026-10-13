@@ -266,10 +266,8 @@ def hold(
 
     """Holds the lock of the clone of a vault while a backup writes it.
 
-    The lock file sits next to the clone. As with the lock of the app, it is
-    a SQLite database held in an exclusive transaction, which works alike on
-    every operating system, and the lock goes when the process ends, even
-    when it crashes.
+    The lock file sits next to the clone and works as
+    `threadvault.slack.application.lock` does.
 
     Args:
         directory: Directory of the clone; its parent is created when missing.
