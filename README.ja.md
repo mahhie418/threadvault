@@ -100,7 +100,7 @@ ThreadVault は、設定フォルダの `threadvault.env` を読み込みます�
 |---|---|
 | `threadvault setup` | Slack app の作成、GitHub App の登録、オーナーの設定、ログイン時の自動起動の登録を案内し、設定ファイルに保存します |
 | `threadvault start` | 止めるまで Slack app を実行します。`--log FILE` を付けると、出力をファイルに追記します。 |
-| `threadvault stop` | Slack app を止めて、ログイン時の自動起動をやめます (macOS) |
+| `threadvault stop` | Slack app を止めて、ログイン時の自動起動をやめます |
 | `threadvault doctor` | 設定、Slack、git、GitHub、保存先を確認します |
 | `threadvault connect` | App Home の「GitHub と連携する」と同じ操作を、ターミナルから行います |
 | `threadvault backup --out DIR` | ワークスペースを 1 回、ローカルのフォルダにバックアップします |
@@ -122,10 +122,7 @@ Slack app を再起動するには (設定ファイルを変更したときな�
 - Windows: `schtasks /End /TN threadvault` を実行してから、`schtasks /Run /TN threadvault` を実行します。
 - 自動起動を使っていない場合: `threadvault start` を Ctrl+C で止めて、もう一度実行します。
 
-Slack app を止めて、ログイン時の自動起動をやめるには:
-
-- macOS: `threadvault stop` を実行します。
-- Windows: `schtasks /End /TN threadvault` と `schtasks /Delete /TN threadvault /F` を実行して、データフォルダの `threadvault.xml` を削除します。
+Slack app を止めて、ログイン時の自動起動をやめるには、`threadvault stop` を実行します。
 
 ## 更新とアンインストール
 

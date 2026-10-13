@@ -45,21 +45,29 @@ def register(
 
     raise AutostartError(f'Starting at login is not supported on {sys.platform}')
 
-def unregister() -> str | None:
+def unregister(
+    log: pathlib.Path
+) -> str | None:
 
     """Stops the Slack app that starts at login, and removes its registration.
 
     On macOS, the launchd agent is booted out, which stops the Slack app, and
-    its file is deleted.
+    its file is deleted. On Windows, the running scheduled task is ended, and
+    the task and its file next to the log are deleted.
+
+    Args:
+        log: File for the output of the Slack app.
 
     Returns:
         Where the registration was described, or None when there was none.
 
     Raises:
-        AutostartError: This system is not supported.
+        AutostartError: This system is not supported, or it refused to delete
+                        the registration.
     """
 
     if sys.platform == 'darwin': return _unload(os.getuid())
+    if sys.platform == 'win32': return _cancel(log)
 
     raise AutostartError(f'Removing the start at login is not supported on {sys.platform}')
 
@@ -112,6 +120,24 @@ def _unload(
     agent.unlink()
 
     return str(agent)
+
+def _cancel(
+    log: pathlib.Path
+) -> str | None:
+
+    task = pathlib.Path(os.path.join(log.parent, f'{LABEL}.xml'))
+    command = os.path.join(os.environ.get('SYSTEMROOT', 'C:\\Windows'), 'System32', 'schtasks.exe')
+
+    if subprocess.run([command, '/Query', '/TN', LABEL], capture_output = True, check = False).returncode != 0: return None
+
+    subprocess.run([command, '/End', '/TN', LABEL], capture_output = True, check = False)
+
+    try: subprocess.run([command, '/Delete', '/TN', LABEL, '/F'], capture_output = True, encoding = 'utf-8', errors = 'replace', check = True)
+    except subprocess.CalledProcessError as error: raise AutostartError(f'Task Scheduler refused to delete {LABEL}: {error.stderr.strip()}') from None
+
+    task.unlink(missing_ok = True)
+
+    return str(task)
 
 def _fill(
     name: str,

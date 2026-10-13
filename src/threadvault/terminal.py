@@ -208,9 +208,9 @@ def _stop(
 
     try:
 
-        registration = threadvault.autostart.unregister()
+        registration = threadvault.autostart.unregister(pathlib.Path(os.path.join(threadvault.configuration.load().threadvault_data_directory, 'start.log')))
 
-    except threadvault.autostart.AutostartError as error:
+    except (threadvault.configuration.ConfigurationError, threadvault.autostart.AutostartError) as error:
 
         _report('ERROR', str(error))
 

@@ -484,16 +484,21 @@ class TestTerminalCommandStop:
     @pytest.mark.parametrize(('registration', 'out'), REGISTRATIONS_STOP)
     def test_registration(
         self,
+        tmp_path: pathlib.Path,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
         registration: str | None,
         out: str
     ) -> None:
 
-        monkeypatch.setattr(threadvault.autostart, 'unregister', unittest.mock.Mock(return_value = registration))
+        unregister = unittest.mock.Mock(return_value = registration)
+
+        monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
+        monkeypatch.setattr(threadvault.autostart, 'unregister', unregister)
 
         assert threadvault.terminal.main(['stop']) == 0
         assert capsys.readouterr() == (out, '')
+        assert unregister.call_args == unittest.mock.call(pathlib.Path(os.path.join(tmp_path, 'start.log')))
 
     def test_failure(
         self,
