@@ -772,7 +772,7 @@ def test_handler_backup_start(
 
         runs.append((settings.repository_name, full_name, directory.parts[-3:], token(), days, limit, now.tzinfo, backlog))
 
-        return [], 'xxx'
+        return [threadvault.backup.runner.Result(channel = 'CXXX1', directory = 'xxx', messages = 0, deleted = 0, withheld = 0, files = 0, failures = 0)], 'xxx'
 
     monkeypatch.setattr(threadvault.backup.runner, 'publish', publish)
     threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = 'xxx/xxx'), update_user = 'UXXX1')
@@ -878,6 +878,30 @@ def test_handler_backlog_marking(
 
     assert post(application, message).status == 200
     assert threadvault.backup.backlog.BacklogIO(database).load('TXXX') == backlog
+
+def test_handler_backlog_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    application: slack_bolt.App,
+    database: threadvault.storage.Database
+) -> None:
+
+    backlog = threadvault.backup.backlog.BacklogIO(database)
+    future = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours = 1)
+    day = datetime.date(2017, 11, 17)
+
+    for channel in ('CXXX1', 'CXXX2'):
+
+        backlog.mark('TXXX', channel, '100.0', TIME_CHECKED)
+        backlog.mark('TXXX', channel, day, TIME_CHECKED)
+
+    backlog.mark('TXXX', 'CXXX2', '200.0', future)
+    backlog.mark('TXXX', 'CXXX2', datetime.date(2017, 11, 18), future)
+    result = threadvault.backup.runner.Result(channel = 'CXXX2', directory = 'xxx', messages = 0, deleted = 0, withheld = 0, files = 0, failures = 0)
+    monkeypatch.setattr(threadvault.backup.runner, 'publish', unittest.mock.Mock(return_value = ([result], 'xxx')))
+    threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = 'xxx/xxx', channel_mode = 'selected', channels_selected = ('CXXX2',)), update_user = 'UXXX1')
+
+    assert submit(application, 'UXXX1', scoped('recent')).status == 200
+    assert backlog.load('TXXX') == threadvault.backup.backlog.Backlog(threads = {'CXXX1': frozenset({'100.0'}), 'CXXX2': frozenset({'200.0'})}, days = {'CXXX1': frozenset({day}), 'CXXX2': frozenset({datetime.date(2017, 11, 18)})})
 
 def test_handler_schedule_plan(
     monkeypatch: pytest.MonkeyPatch,

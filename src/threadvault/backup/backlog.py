@@ -16,7 +16,7 @@ _THREAD_UPSERT = """
         mark_time = excluded.mark_time
 """
 
-_THREAD_DELETE = 'DELETE FROM thread WHERE workspace_id = ? AND mark_time <= ?'
+_THREAD_DELETE = 'DELETE FROM thread WHERE workspace_id = ? AND channel_id = ? AND mark_time <= ?'
 
 _DAY_SELECT = 'SELECT channel_id, message_date FROM day WHERE workspace_id = ?'
 
@@ -27,7 +27,7 @@ _DAY_UPSERT = """
         mark_time = excluded.mark_time
 """
 
-_DAY_DELETE = 'DELETE FROM day WHERE workspace_id = ? AND mark_time <= ?'
+_DAY_DELETE = 'DELETE FROM day WHERE workspace_id = ? AND channel_id = ? AND mark_time <= ?'
 
 @dataclasses.dataclass(frozen = True, slots = True, kw_only = True)
 class Backlog:
@@ -107,10 +107,11 @@ class BacklogIO:
     def clear(
         self,
         workspace_id: str,
-        time: datetime.datetime
+        time: datetime.datetime,
+        channels: collections.abc.Collection[str]
     ) -> None:
 
-        """Removes the marks of a workspace once a backup that loaded them has succeeded.
+        """Removes the marks of channels that a successful backup processed.
 
         A mark made again after `time` stays, as the backup may have fetched
         the thread or the day before the event that marked it again.
@@ -118,14 +119,16 @@ class BacklogIO:
         Args:
             workspace_id: Slack workspace ID.
             time: When the backup loaded the marks.
+            channels: IDs of the channels that the backup saved.
         """
 
         until = time.astimezone(datetime.UTC).isoformat()
+        arguments = [(workspace_id, channel, until) for channel in set(channels)]
 
         with self._database.begin() as connection:
 
-            connection.execute(_THREAD_DELETE, (workspace_id, until))
-            connection.execute(_DAY_DELETE, (workspace_id, until))
+            connection.executemany(_THREAD_DELETE, arguments)
+            connection.executemany(_DAY_DELETE, arguments)
 
 def _group[T](
     rows: collections.abc.Collection[sqlite3.Row],

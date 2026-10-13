@@ -66,7 +66,7 @@ def register(
     marked threads again, so that it does not miss a reply to a thread older
     than the days that it fetches. An edited or deleted message marks its
     thread, or its day when it is not a reply, for the same reason. The
-    marks go once the backup succeeds.
+    marks of the channels that the backup saved go once it succeeds.
 
     Args:
         application: The application.
@@ -283,9 +283,9 @@ def register(
         now, marks = datetime.datetime.now(datetime.UTC), backlog.load(team)
         commit, reason = None, None
 
-        try: _, commit = threadvault.backup.runner.publish(application.client, workspace, directory = directory, full_name = workspace.repository_name, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = days, limit = settings.threadvault_deletions_maximum, now = now, backlog = marks)
+        try: results, commit = threadvault.backup.runner.publish(application.client, workspace, directory = directory, full_name = workspace.repository_name, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = days, limit = settings.threadvault_deletions_maximum, now = now, backlog = marks)
         except (threadvault.backup.runner.VaultError, threadvault.backup.runner.LockError, threadvault.github.rest.GitHubError, threadvault.github.token.TokenError, threadvault.vault.repository.GitError, threadvault.vault.state.StateError, slack_sdk.errors.SlackApiError) as error: _LOGGER.warning('Backup failed: %s', error); reason = str(error)
-        else: backlog.clear(team, now)
+        else: backlog.clear(team, now, {result.channel for result in results})
 
         journal.save(team, threadvault.journal.Run(completion = datetime.datetime.now(datetime.UTC), repository = workspace.repository_name, commit = commit, reason = reason))
 

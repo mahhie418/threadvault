@@ -39,7 +39,7 @@ def test_backlog_thread_clearance(
     for team, thread_ts in (('TXXX1', '100.0'), ('TXXX1', '200.0'), ('TXXX2', '300.0')): backlog.mark(team, 'CXXX1', thread_ts, TIME_MARKED)
 
     backlog.mark('TXXX1', 'CXXX1', '200.0', TIME_MARKED + datetime.timedelta(hours = 1))
-    backlog.clear('TXXX1', TIME_MARKED)
+    backlog.clear('TXXX1', TIME_MARKED, ('CXXX1',))
 
     assert backlog.load('TXXX1') == threadvault.backup.backlog.Backlog(threads = {'CXXX1': frozenset({'200.0'})})
     assert backlog.load('TXXX2') == threadvault.backup.backlog.Backlog(threads = {'CXXX1': frozenset({'300.0'})})
@@ -63,7 +63,7 @@ def test_backlog_day_clearance(
     for team, day in (('TXXX1', datetime.date(2026, 10, 9)), ('TXXX1', datetime.date(2026, 10, 10)), ('TXXX2', datetime.date(2026, 10, 9))): backlog.mark(team, 'CXXX1', day, TIME_MARKED)
 
     backlog.mark('TXXX1', 'CXXX1', datetime.date(2026, 10, 10), TIME_MARKED + datetime.timedelta(hours = 1))
-    backlog.clear('TXXX1', TIME_MARKED)
+    backlog.clear('TXXX1', TIME_MARKED, ('CXXX1',))
 
     assert backlog.load('TXXX1') == threadvault.backup.backlog.Backlog(days = {'CXXX1': frozenset({datetime.date(2026, 10, 10)})})
     assert backlog.load('TXXX2') == threadvault.backup.backlog.Backlog(days = {'CXXX1': frozenset({datetime.date(2026, 10, 9)})})
