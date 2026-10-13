@@ -57,8 +57,8 @@ With the Slack app running, open ThreadVault in Slack and go to its Home tab:
 ## Owner and admins
 
 - The owner can do everything, including allowing admins to operate the app with **Admin permissions** and handing the ownership to an admin with **Transfer ownership**. Setup writes the first owner to `THREADVAULT_OWNER_ID`.
-- Admins see the destination. Once the owner allows them, they can also connect GitHub, choose the destination, change the settings and start backups.
-- Everyone else sees only the status of the backups.
+- Admins allowed by the owner see the connection to GitHub and the destination. They can also connect GitHub, choose the destination, change the settings and start backups.
+- Everyone else, including the other admins, sees only the status of the backups.
 
 Setup does not ask for admins. To add them, write their member IDs to `THREADVAULT_ADMIN_IDS` in the settings file, separated by commas, then restart the Slack app:
 
@@ -66,7 +66,7 @@ Setup does not ask for admins. To add them, write their member IDs to `THREADVAU
 THREADVAULT_ADMIN_IDS=U0123ABCDE,U0456FGHIJ
 ```
 
-The owner and the admins get a direct message when GitHub is connected or disconnected, when the destination changes and when a backup fails.
+The owner and the admins allowed by the owner get a direct message when GitHub is connected or disconnected, when the destination changes and when a backup fails.
 
 ## Settings
 

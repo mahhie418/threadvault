@@ -66,16 +66,18 @@ def home(
 
     """Builds the App Home, which shows the state of the backup.
 
-    Everyone sees when the last backup ended and whether it succeeded. The
-    owner and the admins also see the commit that it left in the vault, or
-    why it failed. Everyone also sees when the daily backup runs next.
+    Everyone sees when the last backup ended and whether it succeeded, and
+    when the daily backup runs next. Only the owner and the admins allowed to
+    operate the app see anything about GitHub: the state of the connection,
+    the destination, and the commit that the last backup left in the vault
+    or why it failed.
 
     While a backup is running, everyone sees so. Otherwise, while GitHub is
     connected and the destination is chosen, the owner and the admins allowed
     to operate the app see a button that backs up the workspace at once, and
     one that resynchronises the whole workspace once they confirm it.
 
-    The owner and the admins also see the destination and their own role.
+    The owner and the admins also see their own role.
     The owner and the admins allowed to operate the app see a button that
     connects GitHub, connects it again once the connection has stopped
     working, or disconnects it, buttons that choose or create the destination
@@ -107,13 +109,15 @@ def home(
         case 'expired': connection = threadvault.localisation.translate('home.github.expired', language)
         case _: connection = threadvault.localisation.translate('home.github.connected', language)
 
-    fields = [(threadvault.localisation.translate('home.github', language), connection)]
+    fields = []
     blocks = []
 
-    if role != 'member':
+    if role != 'member': blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate(f'home.role.{role}', language)}]})
 
+    if role in ('owner', 'operator'):
+
+        fields.append((threadvault.localisation.translate('home.github', language), connection))
         fields.append((threadvault.localisation.translate('home.destination', language), f'<https://github.com/{destination}|{destination}>' if destination else threadvault.localisation.translate('home.destination.missing', language)))
-        blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate(f'home.role.{role}', language)}]})
 
     fields.append((threadvault.localisation.translate('home.backup.last', language), _report(last = last, role = role, language = language)))
     fields.append((threadvault.localisation.translate('home.schedule', language), _date(planned) if planned else threadvault.localisation.translate('home.schedule.missing', language)))
@@ -466,7 +470,7 @@ def _report(
     if last.commit is None: text, detail = threadvault.localisation.translate('home.backup.failure', language, time = time), last.reason
     else: text, detail = threadvault.localisation.translate('home.backup.success', language, time = time), f'<https://github.com/{last.repository}/commit/{last.commit}|{last.commit[:7]}>'
 
-    return text if role == 'member' else f'{text}\n{detail}'
+    return f'{text}\n{detail}' if role in ('owner', 'operator') else text
 
 def _date(
     moment: datetime.datetime

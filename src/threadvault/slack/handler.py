@@ -52,14 +52,14 @@ def register(
     permissions of the admins and transfers the ownership to an admin, as
     `threadvault.slack.permission.restrict` makes sure. When the permissions
     or the ownership change, both the admin and the owner hear of it by
-    direct message, and the owner and every admin hear by direct message
-    when GitHub is connected or disconnected, or when the destination is
-    chosen or created. A backup started from the App Home runs in the
+    direct message, and the owner and the allowed admins hear by direct
+    message when GitHub is connected or disconnected, or when the destination
+    is chosen or created. A backup started from the App Home runs in the
     background, one at a time, as `threadvault.worker.Worker` makes sure, and
     the App Home of whoever started it shows the backup while it runs. Every
-    App Home shows how the last backup ended, and the owner and every admin
-    hear by direct message when a backup fails. A resynchronisation is a
-    backup that fetches every channel in full and deletes nothing. Once the
+    App Home shows how the last backup ended, and the owner and the allowed
+    admins hear by direct message when a backup fails. A resynchronisation is
+    a backup that fetches every channel in full and deletes nothing. Once the
     destination is chosen, the daily backup runs at the time in the settings
     of the workspace, and one missed while the app was stopped runs as soon
     as the app runs again. The settings say whether it runs and its time and
@@ -169,7 +169,9 @@ def register(
         **values: str
     ) -> None:
 
-        for recipient in sorted(threadvault.slack.permission.admins(settings, store.load(team))): tell(recipient, key, **values)
+        workspace = store.load(team)
+
+        for recipient in sorted(admin for admin in threadvault.slack.permission.admins(settings, workspace) if threadvault.slack.permission.role(settings, workspace, admin) in ('owner', 'operator')): tell(recipient, key, **values)
 
     def link(
         team: str,
