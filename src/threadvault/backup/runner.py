@@ -4,12 +4,14 @@ import collections.abc
 import contextlib
 import dataclasses
 import datetime
+import decimal
 import itertools
 import json
 import logging
 import os
 import pathlib
 import sqlite3
+import tempfile
 import typing
 
 import slack_sdk
@@ -88,6 +90,7 @@ def run(
     yet, and every channel when `days` is None, is fetched in full, and
     nothing is deleted from it. Any other channel is fetched for the last
     `days` days and merged into what the vault holds.
+    When their combined deletions exceed `limit`, every candidate is kept.
     A renamed channel first moves to the directory of its new name. Moves
     are recorded before they start and resumed after an interruption. The vault
     then gets the users and the channels, the messages of each channel as
@@ -143,7 +146,7 @@ def run(
     transcripts = pathlib.Path(os.path.join(vault, threadvault.vault.markdown.TRANSCRIPTS_DIRECTORY))
     progress = {channel: directory for channel, directory in directories.items() if channel in previous}
     marked = backlog or threadvault.backup.backlog.Backlog()
-    results = []
+    results = {}
 
     _move(vault, previous, directories)
 
@@ -151,38 +154,65 @@ def run(
     threadvault.vault.export.users(raw, users)
     threadvault.vault.export.channels(raw, targets, members)
 
-    for channel in targets:
+    def write(
+        channel: collections.abc.Mapping[str, typing.Any],
+        outcome: threadvault.vault.merge.Outcome,
+        saved: int,
+        failed: int
+    ) -> None:
 
-        recent = days is not None and channel['id'] in previous
         directory = directories[channel['id']]
-        stored = _read(pathlib.Path(os.path.join(raw, directory)))
-        oldest, latest = threadvault.backup.fetch.window(now, days if recent else None)
-        windows = [(oldest, latest), *threadvault.backup.fetch.days(marked.days.get(channel['id'], ()), oldest)]
-        history = [message for start, end in windows for message in threadvault.slack.api.history(client, channel['id'], oldest = start, latest = end)]
-        threads = {thread_ts: threadvault.slack.api.replies(client, channel['id'], thread_ts) for thread_ts in threadvault.backup.fetch.threads(history, stored, marked.threads.get(channel['id'], ()))}
-        outcome = threadvault.vault.merge.merge(stored, history, threads, windows = windows, now = now, limit = limit if recent else 0)
-        saved, failed = _download(client, vault, itertools.chain(history, *threads.values()), settings.attachment_size_maximum * 1024 * 1024) if settings.attachments_enabled else (0, 0)
         paths = {file['id']: threadvault.vault.files.locate(file) for file in threadvault.vault.files.select(outcome.messages)}
         attachments = {file_id: path for file_id, path in paths.items() if pathlib.Path(os.path.join(vault, path)).is_file()}
 
         threadvault.vault.export.messages(pathlib.Path(os.path.join(raw, directory)), outcome.messages, users)
         threadvault.vault.markdown.transcribe(pathlib.Path(os.path.join(transcripts, directory)), channel, outcome.messages, users = users, channels = channels, attachments = attachments, url = url, timezone = settings.workspace_timezone, language = settings.markdown_language)
 
-        if limit is not None: limit -= len(outcome.deleted)
+        results[channel['id']] = Result(channel = channel['id'], directory = directory, messages = len(outcome.messages), deleted = len(outcome.deleted), withheld = len(outcome.withheld), files = saved, failures = failed)
 
-        results.append(Result(channel = channel['id'], directory = directory, messages = len(outcome.messages), deleted = len(outcome.deleted), withheld = len(outcome.withheld), files = saved, failures = failed))
-
-        if recent: continue
+        if days is not None and channel['id'] in previous: return
 
         progress[channel['id']] = directory
         threadvault.vault.state.save(vault, progress)
 
-        if checkpoint is not None: checkpoint(results[-1])
+        if checkpoint is not None: checkpoint(results[channel['id']])
+
+    with tempfile.TemporaryDirectory(prefix = 'threadvault-') as temporary:
+
+        pending = {}
+        deletions = 0
+
+        for channel in targets:
+
+            recent = days is not None and channel['id'] in previous
+            outcome, saved, failed = _fetch(client, vault, settings, channel['id'], directories[channel['id']], marked, days = days if recent else None, limit = None if recent and limit else limit if recent else 0, now = now)
+
+            if recent and limit:
+
+                path = pathlib.Path(os.path.join(temporary, f'{channel['id']}.json'))
+                _stage(path, outcome, saved, failed)
+                pending[channel['id']] = path
+                deletions += len(outcome.deleted)
+
+            else:
+
+                write(channel, outcome, saved, failed)
+
+            del outcome
+
+        for channel in targets:
+
+            if channel['id'] not in pending: continue
+
+            outcome, saved, failed = _restore(pending[channel['id']], delete = limit is None or deletions <= limit)
+            write(channel, outcome, saved, failed)
+
+            del outcome
 
     threadvault.vault.markdown.catalogue(vault, targets, directories, timezone = settings.workspace_timezone, language = settings.markdown_language)
     threadvault.vault.state.save(vault, directories)
 
-    return results
+    return [results[channel['id']] for channel in targets]
 
 def publish(
     client: slack_sdk.web.WebClient,
@@ -346,6 +376,52 @@ def _join(
         else: joined.add(channel['id'])
 
     return joined
+
+def _fetch(
+    client: slack_sdk.web.WebClient,
+    vault: pathlib.Path,
+    settings: threadvault.customisation.Settings,
+    channel: str,
+    directory: str,
+    backlog: threadvault.backup.backlog.Backlog,
+    *,
+    days: int | None,
+    limit: int | None,
+    now: datetime.datetime
+) -> tuple[threadvault.vault.merge.Outcome, int, int]:
+
+    stored = _read(pathlib.Path(os.path.join(vault, threadvault.vault.export.RAW_DIRECTORY, directory)))
+    oldest, latest = threadvault.backup.fetch.window(now, days)
+    windows = [(oldest, latest), *threadvault.backup.fetch.days(backlog.days.get(channel, ()), oldest)]
+    history = [message for start, end in windows for message in threadvault.slack.api.history(client, channel, oldest = start, latest = end)]
+    threads = {thread_ts: threadvault.slack.api.replies(client, channel, thread_ts) for thread_ts in threadvault.backup.fetch.threads(history, stored, backlog.threads.get(channel, ()))}
+    outcome = threadvault.vault.merge.merge(stored, history, threads, windows = windows, now = now, limit = limit)
+    saved, failed = _download(client, vault, itertools.chain(history, *threads.values()), settings.attachment_size_maximum * 1024 * 1024) if settings.attachments_enabled else (0, 0)
+
+    return outcome, saved, failed
+
+def _stage(
+    path: pathlib.Path,
+    outcome: threadvault.vault.merge.Outcome,
+    saved: int,
+    failed: int
+) -> None:
+
+    with path.open('w', encoding = 'utf-8') as stream: json.dump({'messages': outcome.messages, 'deleted': outcome.deleted, 'files': saved, 'failures': failed}, stream, ensure_ascii = False)
+
+def _restore(
+    path: pathlib.Path,
+    *,
+    delete: bool
+) -> tuple[threadvault.vault.merge.Outcome, int, int]:
+
+    with path.open(encoding = 'utf-8') as stream: data = json.load(stream)
+
+    deleted = data['deleted']
+    messages = data['messages'] if delete else sorted([*data['messages'], *deleted], key = lambda message: decimal.Decimal(message['ts']))
+    outcome = threadvault.vault.merge.Outcome(messages = messages, deleted = deleted if delete else [], withheld = [] if delete else deleted)
+
+    return outcome, data['files'], data['failures']
 
 def _download(
     client: slack_sdk.web.WebClient,

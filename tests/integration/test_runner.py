@@ -6,6 +6,7 @@ import os
 import pathlib
 import typing
 import unittest.mock
+import weakref
 
 import httpx
 import pytest
@@ -18,6 +19,7 @@ import threadvault.backup.runner
 import threadvault.customisation
 import threadvault.github.rest
 import threadvault.slack.api
+import threadvault.vault.merge
 import threadvault.vault.repository
 import threadvault.vault.state
 
@@ -32,6 +34,9 @@ MODES_TRAVERSAL = ['relative', 'absolute']
 TARGETS_SYMLINK = ['external', 'internal', 'missing']
 
 RENAMES_INTERRUPTED = ['fetch', *range(8)]
+DELETIONS_LIMITED = [(0, [(0, 1), (0, 1)]), (1, [(0, 1), (0, 1)]), (2, [(1, 0), (1, 0)]), (None, [(1, 0), (1, 0)])]
+
+RUNS_MEMORY = [(None, None), (30, None), (30, 0), (30, 1)]
 
 THREAD_INSERTION = [
     {'latest_reply': '1791160200.000000', 'reply_count': 1, 'text': 'xxx', 'thread_ts': '1791158400.000000', 'ts': '1791158400.000000', 'type': 'message', 'user': 'UXXX1'},
@@ -90,6 +95,10 @@ FILES_PUBLISHED = [
     'transcripts/general/2026-10.md',
     'transcripts/index.md'
 ]
+
+class OutcomeTracked(threadvault.vault.merge.Outcome):
+
+    pass
 
 def locate(
     *names: str
@@ -163,10 +172,13 @@ def test_runner_vault_update(
     assert 'xxx2' in transcript
     assert 'p1791075600000001' not in transcript
 
+@pytest.mark.parametrize(('limit', 'expected'), DELETIONS_LIMITED)
 def test_runner_vault_deletion(
     tmp_path: pathlib.Path,
     workspace: dict[str, typing.Any],
-    slack: slack_sdk.web.WebClient
+    slack: slack_sdk.web.WebClient,
+    limit: int | None,
+    expected: list[tuple[int, int]]
 ) -> None:
 
     workspace['messages']['CXXX2'] = [{'text': 'xxx', 'ts': '1791075600.000000', 'type': 'message', 'user': 'UXXX1'}]
@@ -175,10 +187,10 @@ def test_runner_vault_deletion(
 
     workspace['messages'] = {'CXXX1': [message for message in workspace['messages']['CXXX1'] if message['ts'] not in MESSAGES_DELETION], 'CXXX2': []}
 
-    results = run(slack, tmp_path, limit = 1)
+    results = run(slack, tmp_path, limit = limit)
 
-    assert [(result.deleted, result.withheld) for result in results] == [(1, 0), (0, 1)]
-    assert [message['ts'] for message in read(tmp_path, 'general', '2026-10-04.json')] == ['1791072000.000000', '1791075600.000000', '1791075600.000001']
+    assert [(result.deleted, result.withheld) for result in results] == expected
+    assert ('1791075600.000001' in {message['ts'] for message in read(tmp_path, 'general', '2026-10-04.json')}) == bool(expected[1][1])
 
 def test_runner_vault_state(
     tmp_path: pathlib.Path,
@@ -438,6 +450,57 @@ def test_runner_vault_checkpoint(
     for _ in range(2): threadvault.backup.runner.run(slack, tmp_path, SETTINGS, days = 30, limit = None, now = NOW, checkpoint = lambda _: states.append(threadvault.vault.state.load(tmp_path)))
 
     assert states == [{'CXXX2': 'xxx'}, {'CXXX1': 'general', 'CXXX2': 'xxx'}]
+
+@pytest.mark.parametrize(('days', 'limit'), RUNS_MEMORY)
+def test_runner_vault_memory(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient,
+    days: int | None,
+    limit: int | None
+) -> None:
+
+    workspace['messages']['CXXX2'] = [{'text': 'xxx', 'ts': '1791075600.000000', 'type': 'message', 'user': 'UXXX1'}]
+
+    run(slack, tmp_path)
+
+    history = threadvault.slack.api.history
+    references = []
+
+    def track(
+        *,
+        messages: list[dict[str, typing.Any]],
+        deleted: list[dict[str, typing.Any]],
+        withheld: list[dict[str, typing.Any]]
+    ) -> threadvault.vault.merge.Outcome:
+
+        assert all(reference() is None for reference in references)
+
+        tracked = OutcomeTracked(messages = messages, deleted = deleted, withheld = withheld)
+        references.append(weakref.ref(tracked))
+
+        return tracked
+
+    def retrieve(
+        client: slack_sdk.web.WebClient,
+        channel: str,
+        *,
+        oldest: str,
+        latest: str
+    ) -> list[dict[str, typing.Any]]:
+
+        assert all(reference() is None for reference in references)
+
+        return history(client, channel, oldest = oldest, latest = latest)
+
+    monkeypatch.setattr(threadvault.vault.merge, 'Outcome', track)
+    monkeypatch.setattr(threadvault.slack.api, 'history', retrieve)
+
+    results = threadvault.backup.runner.run(slack, tmp_path, SETTINGS, days = days, limit = limit, now = NOW)
+
+    assert [result.messages for result in results] == [1, 5]
+    assert all(reference() is None for reference in references)
 
 def test_runner_vault_resynchronisation(
     tmp_path: pathlib.Path,
