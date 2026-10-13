@@ -16,7 +16,7 @@ RUN_FAILED = threadvault.journal.Run(completion = datetime.datetime(2026, 10, 8,
 TIME_PLANNED = datetime.datetime(2026, 10, 9, 15, 0, tzinfo = datetime.UTC)
 
 STATES_HOME = [
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_SUCCEEDED, 'planned': TIME_PLANNED, 'role': 'owner', 'language': 'ja'}, ['*前回のバックアップ*\n<!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC> に成功しました (<https://github.com/xxx/xxx1/commit/0123456789abcdef0123456789abcdef01234567|0123456>)', '*次回のバックアップ*\n<!date^1791558000^{date_short} {time}|2026-10-09 15:00 UTC>', '*全体の再同期*', '*連携状態*\n連携済み', '*保存先*\n<https://github.com/xxx/xxx|xxx/xxx>', '*新しいリポジトリ*', '*管理者の権限*\n操作を許可した管理者は、GitHub の連携、保存先、設定を変更できます。', '*オーナーの譲渡*\n譲渡すると、あなたはオーナーの操作ができなくなります。']),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_SUCCEEDED, 'planned': TIME_PLANNED, 'role': 'owner', 'language': 'ja'}, ['*前回のバックアップ*\n<!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC> に成功しました (<https://github.com/xxx/xxx1/commit/0123456789abcdef0123456789abcdef01234567|0123456>)', '*次回のバックアップ*\n<!date^1791558000^{date_short} {time}|2026-10-09 15:00 UTC>', '*全体の再同期*', '*連携状態*\n連携済み', '*保存先*\n<https://github.com/xxx/xxx|xxx/xxx>', '*管理者の権限*\n操作を許可した管理者は、GitHub の連携、保存先、設定を変更できます。', '*オーナーの譲渡*\n譲渡すると、あなたはオーナーの操作ができなくなります。']),
     ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_SUCCEEDED, 'planned': TIME_PLANNED, 'role': 'member', 'language': 'en'}, ['*Last backup*\nSucceeded at <!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC>', '*Next backup*\n<!date^1791558000^{date_short} {time}|2026-10-09 15:00 UTC>']),
     ({'github': 'disconnected', 'destination': None, 'last': None, 'planned': None, 'role': 'operator', 'language': 'en'}, ['*Last backup*\nNone yet', '*Next backup*\nNot scheduled', '*Connection*\nNot connected', '*Destination*\nNot chosen']),
     ({'github': 'expired', 'destination': None, 'last': RUN_FAILED, 'planned': None, 'role': 'operator', 'language': 'en'}, ['*Last backup*\nFailed at <!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC>\nxxx', '*Next backup*\nNot scheduled', '*Connection*\nNeeds reconnecting', '*Destination*\nNot chosen']),
@@ -40,8 +40,8 @@ ROLES_HEADING = [
 ]
 
 VIEWERS_MESSAGE = [
-    ({'github': 'connected', 'role': 'owner'}, [(threadvault.slack.view.SETTINGS_ACTION, 'Change settings', None, False), (threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', None, True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', None, False), (threadvault.slack.view.CREATION_ACTION, 'Create repository', None, False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Change permissions', 'danger', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', 'danger', False)]),
-    ({'github': 'connected', 'role': 'operator'}, [(threadvault.slack.view.SETTINGS_ACTION, 'Change settings', None, False), (threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', None, True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', None, False), (threadvault.slack.view.CREATION_ACTION, 'Create repository', None, False)]),
+    ({'github': 'connected', 'role': 'owner'}, [(threadvault.slack.view.SETTINGS_ACTION, 'Change settings', None, False), (threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', None, True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', None, False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Change permissions', 'danger', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', 'danger', False)]),
+    ({'github': 'connected', 'role': 'operator'}, [(threadvault.slack.view.SETTINGS_ACTION, 'Change settings', None, False), (threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', None, True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', None, False)]),
     ({'github': 'connected', 'role': 'admin'}, []),
     ({'github': 'disconnected', 'role': 'owner'}, [(threadvault.slack.view.SETTINGS_ACTION, 'Change settings', None, False), (threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', 'primary', False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Change permissions', 'danger', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', 'danger', False)]),
     ({'github': 'disconnected', 'role': 'operator'}, [(threadvault.slack.view.SETTINGS_ACTION, 'Change settings', None, False), (threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', 'primary', False)]),
@@ -201,6 +201,7 @@ def test_view_destination_menu(
 
     assert (view['callback_id'], menu['action_id'], menu['min_query_length']) == (threadvault.slack.view.DESTINATION_CALLBACK, threadvault.slack.view.REPOSITORY_ACTION, 0)
     assert ([menu['initial_option']['value']] if 'initial_option' in menu else []) == values
+    assert [(element['action_id'], element['text']['text']) for element in view['blocks'][1]['elements']] == [(threadvault.slack.view.CREATION_ACTION, 'Create new repository')]
 
 def test_view_destination_option() -> None:
 

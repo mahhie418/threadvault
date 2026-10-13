@@ -436,9 +436,10 @@ def register(
         if context.user_id is None: return
 
         language = choose(context.user_id)
-        opening: dict[str, typing.Any] = application.client.views_open(trigger_id = body['trigger_id'], view = threadvault.slack.view.propose(accounts = None, language = language)).get('view', {})
+        modal = body['view']['id']
 
-        detach(lambda: gather(opening['id'], language))
+        show(modal, threadvault.slack.view.propose(accounts = None, language = language))
+        detach(lambda: gather(modal, language))
 
     def create(
         ack: slack_bolt.Ack,

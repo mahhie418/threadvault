@@ -633,10 +633,10 @@ def test_handler_creation_offer(
 
         respx.get(f'{threadvault.github.rest.API_URL}/user/installations').respond(200, json = {'total_count': 2, 'installations': [{'id': 1, 'account': {'login': 'XXX2'}}, {'id': 2, 'account': {'login': 'xxx1'}}]})
 
-        assert press(application, 'UXXX1', threadvault.slack.view.CREATION_ACTION).status == 200
+        assert press(application, 'UXXX1', threadvault.slack.view.CREATION_ACTION, modal = 'VXXX').status == 200
 
-    assert calls(workspace, 'views.open') == [{'trigger_id': 'xxx', 'view': threadvault.slack.view.propose(accounts = None, language = 'ja')}]
-    assert calls(workspace, 'views.update') == [{'view_id': 'VXXX', 'view': threadvault.slack.view.propose(accounts = ['xxx1', 'XXX2'], language = 'ja')}]
+    assert calls(workspace, 'views.open') == []
+    assert calls(workspace, 'views.update') == [{'view_id': 'VXXX', 'view': threadvault.slack.view.propose(accounts = accounts, language = 'ja')} for accounts in (None, ['xxx1', 'XXX2'])]
 
 def test_handler_creation_unavailability(
     application: slack_bolt.App,
@@ -650,9 +650,9 @@ def test_handler_creation_unavailability(
 
         respx.get(f'{threadvault.github.rest.API_URL}/user/installations').respond(500, text = 'xxx')
 
-        assert press(application, 'UXXX1', threadvault.slack.view.CREATION_ACTION).status == 200
+        assert press(application, 'UXXX1', threadvault.slack.view.CREATION_ACTION, modal = 'VXXX').status == 200
 
-    assert calls(workspace, 'views.update') == [{'view_id': 'VXXX', 'view': threadvault.slack.view.establish(repository = '', outcome = 'failure', language = 'ja', message = 'GitHub answered 500 to GET /user/installations?per_page=100: xxx')}]
+    assert calls(workspace, 'views.update') == [{'view_id': 'VXXX', 'view': threadvault.slack.view.propose(accounts = None, language = 'ja')}, {'view_id': 'VXXX', 'view': threadvault.slack.view.establish(repository = '', outcome = 'failure', language = 'ja', message = 'GitHub answered 500 to GET /user/installations?per_page=100: xxx')}]
 
 def test_handler_creation_success(
     application: slack_bolt.App,

@@ -86,11 +86,11 @@ def home(
     The owner and the admins allowed to operate the app see a button that
     connects GitHub, connects it again once the connection has stopped
     working, opens a modal to install the GitHub App while it has no
-    installation, or disconnects GitHub, buttons that choose or create the
-    destination while GitHub is connected, and a button that opens the
-    settings. The owner also sees red buttons, each with a caution, that
-    choose the admins allowed to operate the app and that transfer the
-    ownership to an admin.
+    installation, or disconnects GitHub, a button that chooses the
+    destination, or creates a repository for it, while GitHub is connected,
+    and a button that opens the settings. The owner also sees red buttons,
+    each with a caution, that choose the admins allowed to operate the app
+    and that transfer the ownership to an admin.
 
     Args:
         github: State of the connection to GitHub: disconnected, expired when
@@ -132,8 +132,6 @@ def home(
         blocks.extend([{'type': 'divider'}, _heading(threadvault.localisation.translate('home.github', language))])
         blocks.append(_item(threadvault.localisation.translate('home.connection', language), connection, _button(github = github, language = language)))
         blocks.append(_item(threadvault.localisation.translate('home.destination', language), f'<https://github.com/{destination}|{destination}>' if destination else threadvault.localisation.translate('home.destination.missing', language), _action(DESTINATION_ACTION, threadvault.localisation.translate('home.destination.choice', language)) if github == 'connected' else None))
-
-        if github == 'connected': blocks.append(_item(threadvault.localisation.translate('home.creation', language), None, _action(CREATION_ACTION, threadvault.localisation.translate('home.destination.creation', language))))
 
     if role == 'owner':
 
@@ -236,6 +234,9 @@ def offer(
 
     """Builds the modal that chooses the destination among the private repositories that the GitHub App can access.
 
+    A button below the menu turns the modal into the one that creates a
+    private repository for the destination instead.
+
     Args:
         current: Repository of the vault, as owner/name, or None while none is chosen.
         language: Language of the admin.
@@ -250,7 +251,7 @@ def offer(
 
     block = {'type': 'input', 'block_id': REPOSITORY_ACTION, 'label': _plain(threadvault.localisation.translate('destination.repository', language)), 'hint': _plain(threadvault.localisation.translate('destination.hint', language)), 'element': menu}
 
-    return {'type': 'modal', 'callback_id': DESTINATION_CALLBACK, 'title': _plain(threadvault.localisation.translate('destination.title', language)), 'submit': _plain(threadvault.localisation.translate('destination.submit', language)), 'close': _plain(threadvault.localisation.translate('destination.close', language)), 'blocks': [block]}
+    return {'type': 'modal', 'callback_id': DESTINATION_CALLBACK, 'title': _plain(threadvault.localisation.translate('destination.title', language)), 'submit': _plain(threadvault.localisation.translate('destination.submit', language)), 'close': _plain(threadvault.localisation.translate('destination.close', language)), 'blocks': [block, {'type': 'actions', 'elements': [_action(CREATION_ACTION, threadvault.localisation.translate('destination.creation', language))]}]}
 
 def suggest(
     names: list[str]
@@ -306,7 +307,7 @@ def propose(
         language: Language of the admin.
 
     Returns:
-        The view, as views.open and views.update take it.
+        The view, as views.update takes it.
     """
 
     title = threadvault.localisation.translate('creation.title', language)

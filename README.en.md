@@ -48,7 +48,7 @@ To change an answer, run setup again. Where a question shows the current value i
 With the Slack app running, open ThreadVault in Slack and go to its Home tab:
 
 1. Select **Connect GitHub**, open the page that it shows and enter the code.
-2. Select **Choose destination** and then a private repository that the GitHub App can access, or select **Create repository** to create a private one.
+2. Select **Choose destination** and then a private repository that the GitHub App can access, or select **Create new repository** in the same window to create a private one.
 3. Select **Change settings** to set the time of the daily backup, the channels to back up, the attached files and the language of the Markdown.
 4. Select **Back up now**, or wait for the daily backup.
 
