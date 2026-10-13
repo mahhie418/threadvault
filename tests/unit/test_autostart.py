@@ -65,7 +65,10 @@ def test_autostart_task_registration(
     assert '<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>' in text
     assert '<RestartOnFailure>\n      <Interval>PT1M</Interval>\n      <Count>999</Count>\n    </RestartOnFailure>' in text
     assert f'<Exec>\n      <Command>{python}</Command>\n      <Arguments>-m threadvault start --log "{log}"</Arguments>\n    </Exec>' in text
-    assert [call.args[0] for call in run.call_args_list] == [[os.path.join('xxx', 'System32', 'schtasks.exe'), '/Create', '/TN', 'threadvault', '/XML', str(task), '/F']]
+
+    command = os.path.join('xxx', 'System32', 'schtasks.exe')
+
+    assert [call.args[0] for call in run.call_args_list] == [[command, '/Create', '/TN', 'threadvault', '/XML', str(task), '/F'], [command, '/End', '/TN', 'threadvault'], [command, '/Run', '/TN', 'threadvault']]
 
 def test_autostart_task_refusal(
     tmp_path: pathlib.Path,
@@ -76,6 +79,30 @@ def test_autostart_task_refusal(
     monkeypatch.setattr(subprocess, 'run', unittest.mock.Mock(side_effect = subprocess.CalledProcessError(1, 'xxx', stderr = 'xxx\n')))
 
     with pytest.raises(threadvault.autostart.AutostartError, match = r'refused .*threadvault\.xml: xxx$'): threadvault.autostart.register(pathlib.Path(os.path.join(tmp_path, 'xxx.log')))
+
+def test_autostart_start_refusal(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+
+    run = unittest.mock.Mock(side_effect = [None, None, subprocess.CalledProcessError(1, 'xxx', stderr = 'xxx\n')])
+    monkeypatch.setattr(sys, 'platform', 'win32')
+    monkeypatch.setattr(subprocess, 'run', run)
+
+    with pytest.raises(threadvault.autostart.AutostartError, match = 'could not start threadvault: xxx'): threadvault.autostart.register(pathlib.Path(os.path.join(tmp_path, 'xxx.log')))
+
+def test_autostart_end_failure(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+
+    run = unittest.mock.Mock(side_effect = [None, subprocess.CompletedProcess('xxx', 1), None])
+    monkeypatch.setattr(sys, 'platform', 'win32')
+    monkeypatch.setattr(subprocess, 'run', run)
+    threadvault.autostart.register(pathlib.Path(os.path.join(tmp_path, 'xxx.log')))
+
+    assert run.call_args_list[-1].args[0][1:] == ['/Run', '/TN', 'threadvault']
+    assert len(run.call_args_list) == 3
 
 def test_autostart_platform_support() -> None:
 

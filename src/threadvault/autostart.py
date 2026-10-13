@@ -26,7 +26,8 @@ def register(
     finds git, and appends the output to the log. On Windows, a scheduled
     task of the user runs it with the windowless Python of this installation,
     from a task file next to the log, and the Slack app appends its output to
-    the log itself.
+    the log itself. Registration also starts the app immediately, stopping
+    an earlier scheduled instance on Windows first.
 
     Args:
         log: File for the output of the Slack app.
@@ -72,6 +73,11 @@ def _schedule(
 
     try: subprocess.run([command, '/Create', '/TN', LABEL, '/XML', str(task), '/F'], capture_output = True, encoding = 'utf-8', errors = 'replace', check = True)
     except subprocess.CalledProcessError as error: raise AutostartError(f'Task Scheduler refused {task}: {error.stderr.strip()}') from None
+
+    subprocess.run([command, '/End', '/TN', LABEL], capture_output = True, check = False)
+
+    try: subprocess.run([command, '/Run', '/TN', LABEL], capture_output = True, encoding = 'utf-8', errors = 'replace', check = True)
+    except subprocess.CalledProcessError as error: raise AutostartError(f'Task Scheduler could not start {LABEL}: {error.stderr.strip()}') from None
 
     return str(task)
 
