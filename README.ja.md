@@ -39,7 +39,7 @@ setup は次の 4 つの段階を順に案内し、入力した内容を設定�
 1. **Slack app**: setup が表示するリンクを開いて Slack app を作成します。設定は manifest から自動で入力されます。表示される手順に従って進め、Bot User OAuth Token と App-Level Token を貼り付けます。
 2. **GitHub App**: vault を GitHub の Organization に置くかどうかに答えてから、リンクを開いて GitHub App を登録します。こちらも設定は自動で入力されます。Enable Device Flow にチェックを入れて GitHub App を作成し、vault を置くアカウントにインストールしてから、Client ID と app slug を貼り付けます。
 3. **オーナー**: Slack で ThreadVault のオーナーにする人のメンバー ID を貼り付けます。メンバー ID は、Slack でその人のプロフィールを開き、⋮ (その他) の「メンバー ID をコピー」でコピーできます。
-4. **確認と自動起動**: 設定、Slack、git を確認してから、ログイン時に Slack app を自動で起動するかどうかを聞きます。
+4. **確認と自動起動**: 設定、Slack、git を確認してから、ログイン時に Slack app を自動で起動するかどうかを聞きます。自動で起動しないと答えると、登録済みの自動起動を `threadvault stop` と同じように外します。
 
 設定を変えるときは、setup をもう一度実行します。すでに答えてある質問では、後ろの [ ] に今の値 (トークンでは `keep current`) が表示され、Enter を押すとその値のまま進めます。Slack app を手動で作成する方法は [Creating the Slack app](https://github.com/mahhie418/threadvault/blob/main/docs/slack.md) に、GitHub App を手動で登録する方法は [Registering the GitHub App](https://github.com/mahhie418/threadvault/blob/main/docs/github.md) にあります (どちらも英語)。
 

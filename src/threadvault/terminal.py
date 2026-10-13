@@ -450,13 +450,17 @@ def _autostart() -> None:
 
     if sys.platform in threadvault.autostart.PLATFORMS: print()
 
+    log = pathlib.Path(os.path.join(threadvault.configuration.load().threadvault_data_directory, 'start.log'))
+
     if sys.platform not in threadvault.autostart.PLATFORMS or not _agree('Start the Slack app automatically when you log in?', default = True):
 
-        _report('NEXT', f"run '{threadvault.product.COMMAND} start' to start the Slack app", blank = True)
+        registration = threadvault.autostart.unregister(log) if sys.platform in threadvault.autostart.PLATFORMS else None
+
+        if registration: _report('OK', f'autostart: removed {registration}', blank = True)
+
+        _report('NEXT', f"run '{threadvault.product.COMMAND} start' to start the Slack app", blank = not registration)
 
         return
-
-    log = pathlib.Path(os.path.join(threadvault.configuration.load().threadvault_data_directory, 'start.log'))
 
     _report('OK', f'autostart: {threadvault.autostart.register(log)}', blank = True)
 

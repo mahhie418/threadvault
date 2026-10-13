@@ -39,7 +39,7 @@ Setup walks you through four steps and writes your answers to the settings file:
 1. **Slack app.** Open the link that setup shows to create the Slack app, whose settings are filled in from the manifest. Follow the numbered steps, then paste the Bot User OAuth Token and the App-Level Token.
 2. **GitHub App.** Answer whether the vault is to belong to a GitHub organisation, then open the link to register the GitHub App, whose settings are also filled in. Tick Enable Device Flow, create the app, install it on the account that keeps the vault, and paste the Client ID and the app slug.
 3. **Owner.** Paste the member ID of the person who owns ThreadVault in Slack. To copy it, open their profile in Slack and select ⋮ (More), then Copy member ID.
-4. **Check and autostart.** Setup checks the settings, Slack and git, then offers to start the Slack app automatically when you log in.
+4. **Check and autostart.** Setup checks the settings, Slack and git, then offers to start the Slack app automatically when you log in. If you decline, it stops an earlier registration, as `threadvault stop` does.
 
 To change an answer, run setup again. A question that already has an answer shows it in brackets, or shows `[keep current]` for a token; press Enter to keep it. [Creating the Slack app](https://github.com/mahhie418/threadvault/blob/main/docs/slack.md) and [Registering the GitHub App](https://github.com/mahhie418/threadvault/blob/main/docs/github.md) explain how to do the first two steps by hand.
 
