@@ -16,11 +16,11 @@ RUN_FAILED = threadvault.journal.Run(completion = datetime.datetime(2026, 10, 8,
 TIME_PLANNED = datetime.datetime(2026, 10, 9, 15, 0, tzinfo = datetime.UTC)
 
 STATES_HOME = [
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_SUCCEEDED, 'planned': TIME_PLANNED, 'role': 'owner', 'language': 'ja'}, ['*GitHub*\n連携済み', '*保存先*\n<https://github.com/xxx/xxx|xxx/xxx>', '*前回のバックアップ*\n<!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC> に成功しました\n<https://github.com/xxx/xxx1/commit/0123456789abcdef0123456789abcdef01234567|0123456>', '*次回のバックアップ*\n<!date^1791558000^{date_short} {time}|2026-10-09 15:00 UTC>']),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_SUCCEEDED, 'planned': TIME_PLANNED, 'role': 'owner', 'language': 'ja'}, ['*前回のバックアップ*\n<!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC> に成功しました (<https://github.com/xxx/xxx1/commit/0123456789abcdef0123456789abcdef01234567|0123456>)', '*次回のバックアップ*\n<!date^1791558000^{date_short} {time}|2026-10-09 15:00 UTC>', '*全体の再同期*', '*連携状態*\n連携済み', '*保存先*\n<https://github.com/xxx/xxx|xxx/xxx>', '*新しいリポジトリ*', '*管理者の権限*\n操作を許可した管理者は、GitHub の連携、保存先、設定を変更できます。', '*オーナーの譲渡*\n譲渡すると、あなたはオーナーの操作ができなくなります。']),
     ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_SUCCEEDED, 'planned': TIME_PLANNED, 'role': 'member', 'language': 'en'}, ['*Last backup*\nSucceeded at <!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC>', '*Next backup*\n<!date^1791558000^{date_short} {time}|2026-10-09 15:00 UTC>']),
-    ({'github': 'disconnected', 'destination': None, 'last': None, 'planned': None, 'role': 'operator', 'language': 'en'}, ['*GitHub*\nNot connected', '*Destination*\nNot chosen', '*Last backup*\nNone yet', '*Next backup*\nNot scheduled']),
-    ({'github': 'expired', 'destination': None, 'last': RUN_FAILED, 'planned': None, 'role': 'operator', 'language': 'en'}, ['*GitHub*\nNeeds reconnecting', '*Destination*\nNot chosen', '*Last backup*\nFailed at <!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC>\nxxx', '*Next backup*\nNot scheduled']),
-    ({'github': 'uninstalled', 'destination': None, 'last': None, 'planned': None, 'role': 'operator', 'language': 'en'}, ['*GitHub*\nConnected', '*Destination*\nNot chosen', '*Last backup*\nNone yet', '*Next backup*\nNot scheduled']),
+    ({'github': 'disconnected', 'destination': None, 'last': None, 'planned': None, 'role': 'operator', 'language': 'en'}, ['*Last backup*\nNone yet', '*Next backup*\nNot scheduled', '*Connection*\nNot connected', '*Destination*\nNot chosen']),
+    ({'github': 'expired', 'destination': None, 'last': RUN_FAILED, 'planned': None, 'role': 'operator', 'language': 'en'}, ['*Last backup*\nFailed at <!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC>\nxxx', '*Next backup*\nNot scheduled', '*Connection*\nNeeds reconnecting', '*Destination*\nNot chosen']),
+    ({'github': 'uninstalled', 'destination': None, 'last': None, 'planned': None, 'role': 'operator', 'language': 'en'}, ['*Last backup*\nNone yet', '*Next backup*\nNot scheduled', '*Connection*\nThe GitHub App is not installed', '*Destination*\nNot chosen']),
     ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_FAILED, 'planned': None, 'role': 'admin', 'language': 'en'}, ['*Last backup*\nFailed at <!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC>', '*Next backup*\nNot scheduled']),
     ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_FAILED, 'planned': None, 'role': 'member', 'language': 'ja'}, ['*前回のバックアップ*\n<!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC> に失敗しました', '*次回のバックアップ*\n予定なし'])
 ]
@@ -32,36 +32,33 @@ ROLES_MESSAGE = [
     ('member', [])
 ]
 
-VIEWERS_MESSAGE = [
-    ({'github': 'connected', 'role': 'owner'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', False), (threadvault.slack.view.CREATION_ACTION, 'Create repository', False), (threadvault.slack.view.SETTINGS_ACTION, 'Settings', False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Admin permissions', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', False)]),
-    ({'github': 'connected', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', False), (threadvault.slack.view.CREATION_ACTION, 'Create repository', False), (threadvault.slack.view.SETTINGS_ACTION, 'Settings', False)]),
-    ({'github': 'connected', 'role': 'admin'}, []),
-    ({'github': 'disconnected', 'role': 'owner'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', False), (threadvault.slack.view.SETTINGS_ACTION, 'Settings', False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Admin permissions', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', False)]),
-    ({'github': 'disconnected', 'role': 'operator'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', False), (threadvault.slack.view.SETTINGS_ACTION, 'Settings', False)]),
-    ({'github': 'disconnected', 'role': 'member'}, []),
-    ({'github': 'expired', 'role': 'operator'}, [(threadvault.slack.view.CONNECTION_ACTION, 'Reconnect GitHub', False), (threadvault.slack.view.SETTINGS_ACTION, 'Settings', False)]),
-    ({'github': 'expired', 'role': 'admin'}, []),
-    ({'github': 'uninstalled', 'role': 'operator'}, [(threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', True), (threadvault.slack.view.SETTINGS_ACTION, 'Settings', False)])
+ROLES_HEADING = [
+    ('owner', ['Backup', 'GitHub', 'Owner actions']),
+    ('operator', ['Backup', 'GitHub']),
+    ('admin', ['Backup']),
+    ('member', ['Backup'])
 ]
 
-VIEWERS_INSTALLATION = [
-    ({'github': 'connected', 'role': 'owner'}, []),
-    ({'github': 'disconnected', 'role': 'owner'}, []),
-    ({'github': 'expired', 'role': 'owner'}, []),
-    ({'github': 'uninstalled', 'role': 'owner'}, ['*GitHub App*\nNot installed yet. <https://github.com/apps/xxx1/installations/new|Install it> on the account or organisation that will hold the vault.']),
-    ({'github': 'uninstalled', 'role': 'operator'}, ['*GitHub App*\nNot installed yet. <https://github.com/apps/xxx1/installations/new|Install it> on the account or organisation that will hold the vault.']),
-    ({'github': 'uninstalled', 'role': 'admin'}, []),
-    ({'github': 'uninstalled', 'role': 'member'}, [])
+VIEWERS_MESSAGE = [
+    ({'github': 'connected', 'role': 'owner'}, [(threadvault.slack.view.SETTINGS_ACTION, 'Change settings', None, False), (threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', None, True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', None, False), (threadvault.slack.view.CREATION_ACTION, 'Create repository', None, False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Change permissions', 'danger', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', 'danger', False)]),
+    ({'github': 'connected', 'role': 'operator'}, [(threadvault.slack.view.SETTINGS_ACTION, 'Change settings', None, False), (threadvault.slack.view.DISCONNECTION_ACTION, 'Disconnect GitHub', None, True), (threadvault.slack.view.DESTINATION_ACTION, 'Choose destination', None, False), (threadvault.slack.view.CREATION_ACTION, 'Create repository', None, False)]),
+    ({'github': 'connected', 'role': 'admin'}, []),
+    ({'github': 'disconnected', 'role': 'owner'}, [(threadvault.slack.view.SETTINGS_ACTION, 'Change settings', None, False), (threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', 'primary', False), (threadvault.slack.view.PERMISSIONS_ACTION, 'Change permissions', 'danger', False), (threadvault.slack.view.TRANSFER_ACTION, 'Transfer ownership', 'danger', False)]),
+    ({'github': 'disconnected', 'role': 'operator'}, [(threadvault.slack.view.SETTINGS_ACTION, 'Change settings', None, False), (threadvault.slack.view.CONNECTION_ACTION, 'Connect GitHub', 'primary', False)]),
+    ({'github': 'disconnected', 'role': 'member'}, []),
+    ({'github': 'expired', 'role': 'operator'}, [(threadvault.slack.view.SETTINGS_ACTION, 'Change settings', None, False), (threadvault.slack.view.CONNECTION_ACTION, 'Reconnect GitHub', 'primary', False)]),
+    ({'github': 'expired', 'role': 'admin'}, []),
+    ({'github': 'uninstalled', 'role': 'operator'}, [(threadvault.slack.view.SETTINGS_ACTION, 'Change settings', None, False), (threadvault.slack.view.INSTALLATION_ACTION, 'Install GitHub App', 'primary', False)])
 ]
 
 VIEWERS_BACKUP = [
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'owner'}, [(threadvault.slack.view.BACKUP_ACTION, 'Back up now', False), (threadvault.slack.view.RESYNCHRONISATION_ACTION, 'Resynchronise everything', True)], ['You are the owner.']),
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'operator'}, [(threadvault.slack.view.BACKUP_ACTION, 'Back up now', False), (threadvault.slack.view.RESYNCHRONISATION_ACTION, 'Resynchronise everything', True)], ['You are an admin with permission to operate the app.']),
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'admin'}, [], ['You are an admin without permission to operate the app.']),
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': True, 'role': 'owner'}, [], ['You are the owner.', 'Backing up the workspace…']),
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': True, 'role': 'member'}, [], ['Backing up the workspace…']),
-    ({'github': 'connected', 'destination': None, 'running': False, 'role': 'owner'}, [], ['You are the owner.']),
-    ({'github': 'uninstalled', 'destination': 'xxx/xxx', 'running': False, 'role': 'owner'}, [], ['You are the owner.'])
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'owner'}, [(threadvault.slack.view.BACKUP_ACTION, 'Back up now', 'primary', False), (threadvault.slack.view.RESYNCHRONISATION_ACTION, 'Resynchronise', None, True)], '*Last backup*\nNone yet'),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'operator'}, [(threadvault.slack.view.BACKUP_ACTION, 'Back up now', 'primary', False), (threadvault.slack.view.RESYNCHRONISATION_ACTION, 'Resynchronise', None, True)], '*Last backup*\nNone yet'),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'admin'}, [], '*Last backup*\nNone yet'),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': True, 'role': 'owner'}, [], '*Last backup*\nNone yet\nBacking up the workspace…'),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': True, 'role': 'member'}, [], '*Last backup*\nNone yet\nBacking up the workspace…'),
+    ({'github': 'connected', 'destination': None, 'running': False, 'role': 'owner'}, [], '*Last backup*\nNone yet'),
+    ({'github': 'uninstalled', 'destination': 'xxx/xxx', 'running': False, 'role': 'owner'}, [], '*Last backup*\nNone yet')
 ]
 
 DESTINATIONS_CURRENT = [
@@ -117,10 +114,10 @@ def test_view_home_status(
     texts: list[str]
 ) -> None:
 
-    view = threadvault.slack.view.home(**state, running = False, slug = 'xxx')
+    view = threadvault.slack.view.home(**state, running = False)
 
     assert view['type'] == 'home'
-    assert [field['text'] for block in view['blocks'] if 'fields' in block for field in block['fields']] == texts
+    assert [block['text']['text'] for block in view['blocks'] if block['type'] == 'section'] == texts
 
 @pytest.mark.parametrize(('role', 'texts'), ROLES_MESSAGE)
 def test_view_home_role(
@@ -128,41 +125,41 @@ def test_view_home_role(
     texts: list[str]
 ) -> None:
 
-    view = threadvault.slack.view.home(github = 'disconnected', destination = None, running = False, last = None, planned = None, role = role, slug = 'xxx', language = 'en')
+    view = threadvault.slack.view.home(github = 'disconnected', destination = None, running = False, last = None, planned = None, role = role, language = 'en')
 
     assert [element['text'] for block in view['blocks'] if block['type'] == 'context' for element in block['elements']] == texts
+
+@pytest.mark.parametrize(('role', 'headings'), ROLES_HEADING)
+def test_view_home_heading(
+    role: threadvault.slack.permission.Role,
+    headings: list[str]
+) -> None:
+
+    view = threadvault.slack.view.home(github = 'connected', destination = 'xxx/xxx', running = False, last = None, planned = None, role = role, language = 'en')
+
+    assert [block['text']['text'] for block in view['blocks'] if block['type'] == 'header'] == headings
 
 @pytest.mark.parametrize(('state', 'buttons'), VIEWERS_MESSAGE)
 def test_view_home_connection(
     state: dict[str, typing.Any],
-    buttons: list[tuple[str, str, bool]]
+    buttons: list[tuple[str, str, str | None, bool]]
 ) -> None:
 
-    view = threadvault.slack.view.home(**state, destination = None, running = False, last = None, planned = None, slug = 'xxx', language = 'en')
+    view = threadvault.slack.view.home(**state, destination = None, running = False, last = None, planned = None, language = 'en')
 
-    assert [(element['action_id'], element['text']['text'], 'confirm' in element) for block in view['blocks'] if block['type'] == 'actions' for element in block['elements']] == buttons
+    assert [(block['accessory']['action_id'], block['accessory']['text']['text'], block['accessory'].get('style'), 'confirm' in block['accessory']) for block in view['blocks'] if 'accessory' in block] == buttons
 
-@pytest.mark.parametrize(('state', 'buttons', 'notes'), VIEWERS_BACKUP)
+@pytest.mark.parametrize(('state', 'buttons', 'text'), VIEWERS_BACKUP)
 def test_view_home_backup(
     state: dict[str, typing.Any],
-    buttons: list[tuple[str, str, bool]],
-    notes: list[str]
+    buttons: list[tuple[str, str, str | None, bool]],
+    text: str
 ) -> None:
 
-    view = threadvault.slack.view.home(**state, last = None, planned = None, slug = 'xxx', language = 'en')
+    view = threadvault.slack.view.home(**state, last = None, planned = None, language = 'en')
 
-    assert [(element['action_id'], element['text']['text'], 'confirm' in element) for block in view['blocks'] if block['type'] == 'actions' for element in block['elements'] if element['action_id'] in (threadvault.slack.view.BACKUP_ACTION, threadvault.slack.view.RESYNCHRONISATION_ACTION)] == buttons
-    assert [element['text'] for block in view['blocks'] if block['type'] == 'context' for element in block['elements']] == notes
-
-@pytest.mark.parametrize(('state', 'texts'), VIEWERS_INSTALLATION)
-def test_view_home_installation(
-    state: dict[str, typing.Any],
-    texts: list[str]
-) -> None:
-
-    view = threadvault.slack.view.home(**state, destination = None, running = False, last = None, planned = None, slug = 'xxx1', language = 'en')
-
-    assert [block['text']['text'] for block in view['blocks'] if 'text' in block] == texts
+    assert [(block['accessory']['action_id'], block['accessory']['text']['text'], block['accessory'].get('style'), 'confirm' in block['accessory']) for block in view['blocks'] if block.get('accessory', {}).get('action_id') in (threadvault.slack.view.BACKUP_ACTION, threadvault.slack.view.RESYNCHRONISATION_ACTION)] == buttons
+    assert next(block['text']['text'] for block in view['blocks'] if block['type'] == 'section') == text
 
 @pytest.mark.parametrize(('code', 'text'), CONNECTIONS_MESSAGE)
 def test_view_connection_establishment(
@@ -185,6 +182,13 @@ def test_view_connection_response(
 
     assert view['type'] == 'modal'
     assert [block['text']['text'] for block in view['blocks']] == [text]
+
+def test_view_installation_link() -> None:
+
+    view = threadvault.slack.view.install(slug = 'xxx1', language = 'en')
+    buttons = [element for block in view['blocks'] if block['type'] == 'actions' for element in block['elements']]
+
+    assert [(button['action_id'], button.get('url'), 'confirm' in button) for button in buttons] == [(threadvault.slack.view.LINK_ACTION, 'https://github.com/apps/xxx1/installations/new', False), (threadvault.slack.view.DISCONNECTION_ACTION, None, True)]
 
 @pytest.mark.parametrize(('current', 'values'), DESTINATIONS_CURRENT)
 def test_view_destination_menu(

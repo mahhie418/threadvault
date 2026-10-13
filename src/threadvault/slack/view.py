@@ -19,6 +19,8 @@ BACKUP_ACTION = 'backup_action'
 RESYNCHRONISATION_ACTION = 'resynchronisation_action'
 CONNECTION_ACTION = 'connection_action'
 DISCONNECTION_ACTION = 'disconnection_action'
+INSTALLATION_ACTION = 'installation_action'
+LINK_ACTION = 'link_action'
 DESTINATION_ACTION = 'destination_action'
 DESTINATION_CALLBACK = 'destination_callback'
 CREATION_ACTION = 'creation_action'
@@ -60,11 +62,14 @@ def home(
     last: threadvault.journal.Run | None,
     planned: datetime.datetime | None,
     role: threadvault.slack.permission.Role,
-    slug: str,
     language: threadvault.configuration.Language
 ) -> dict[str, typing.Any]:
 
     """Builds the App Home, which shows the state of the backup.
+
+    Each item takes one block: its name, below it its state when it has one,
+    and a button at the right when the viewer may act on it. Headings group
+    the items about the backup, GitHub and the owner actions.
 
     Everyone sees when the last backup ended and whether it succeeded, and
     when the daily backup runs next. Only the owner and the admins allowed to
@@ -80,11 +85,12 @@ def home(
     The owner and the admins also see their own role.
     The owner and the admins allowed to operate the app see a button that
     connects GitHub, connects it again once the connection has stopped
-    working, or disconnects it, buttons that choose or create the destination
-    while GitHub is connected, a button that opens the settings, and a link
-    to install the GitHub App while it has no installation. The owner also
-    sees buttons that choose the admins allowed to operate the app and that
-    transfer the ownership to an admin.
+    working, opens a modal to install the GitHub App while it has no
+    installation, or disconnects GitHub, buttons that choose or create the
+    destination while GitHub is connected, and a button that opens the
+    settings. The owner also sees red buttons, each with a caution, that
+    choose the admins allowed to operate the app and that transfer the
+    ownership to an admin.
 
     Args:
         github: State of the connection to GitHub: disconnected, expired when
@@ -96,7 +102,6 @@ def home(
         last: The backup that ended last, or None before the first one ends.
         planned: Time of the next daily backup, or None while none is planned.
         role: Role of the viewer.
-        slug: URL slug of the GitHub App.
         language: Language of the viewer.
 
     Returns:
@@ -107,34 +112,34 @@ def home(
 
         case 'disconnected': connection = threadvault.localisation.translate('home.github.disconnected', language)
         case 'expired': connection = threadvault.localisation.translate('home.github.expired', language)
+        case 'uninstalled': connection = threadvault.localisation.translate('home.github.uninstalled', language)
         case _: connection = threadvault.localisation.translate('home.github.connected', language)
 
-    fields = []
+    report = _report(last = last, role = role, language = language)
     blocks = []
 
+    if running: report = f"{report}\n{threadvault.localisation.translate('home.backup.running', language)}"
     if role != 'member': blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate(f'home.role.{role}', language)}]})
+
+    blocks.append(_heading(threadvault.localisation.translate('home.heading.backup', language)))
+    blocks.append(_item(threadvault.localisation.translate('home.backup.last', language), report, _action(BACKUP_ACTION, threadvault.localisation.translate('home.backup', language), style = 'primary') if role in ('owner', 'operator') and github == 'connected' and destination and not running else None))
+    blocks.append(_item(threadvault.localisation.translate('home.schedule', language), _date(planned) if planned else threadvault.localisation.translate('home.schedule.missing', language), _action(SETTINGS_ACTION, threadvault.localisation.translate('home.settings', language)) if role in ('owner', 'operator') else None))
+
+    if role in ('owner', 'operator') and github == 'connected' and destination and not running: blocks.append(_item(threadvault.localisation.translate('home.resynchronisation', language), None, _action(RESYNCHRONISATION_ACTION, threadvault.localisation.translate('home.resynchronisation.action', language), confirmation = _confirmation('resynchronisation', 'primary', language))))
 
     if role in ('owner', 'operator'):
 
-        fields.append((threadvault.localisation.translate('home.github', language), connection))
-        fields.append((threadvault.localisation.translate('home.destination', language), f'<https://github.com/{destination}|{destination}>' if destination else threadvault.localisation.translate('home.destination.missing', language)))
+        blocks.extend([{'type': 'divider'}, _heading(threadvault.localisation.translate('home.github', language))])
+        blocks.append(_item(threadvault.localisation.translate('home.connection', language), connection, _button(github = github, language = language)))
+        blocks.append(_item(threadvault.localisation.translate('home.destination', language), f'<https://github.com/{destination}|{destination}>' if destination else threadvault.localisation.translate('home.destination.missing', language), _action(DESTINATION_ACTION, threadvault.localisation.translate('home.destination.choice', language)) if github == 'connected' else None))
 
-    fields.append((threadvault.localisation.translate('home.backup.last', language), _report(last = last, role = role, language = language)))
-    fields.append((threadvault.localisation.translate('home.schedule', language), _date(planned) if planned else threadvault.localisation.translate('home.schedule.missing', language)))
-    blocks.append({'type': 'section', 'fields': [_text(title, text) for title, text in fields]})
+        if github == 'connected': blocks.append(_item(threadvault.localisation.translate('home.creation', language), None, _action(CREATION_ACTION, threadvault.localisation.translate('home.destination.creation', language))))
 
-    if running: blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate('home.backup.running', language)}]})
-    elif role in ('owner', 'operator') and github == 'connected' and destination: blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': BACKUP_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.backup', language))}, {'type': 'button', 'action_id': RESYNCHRONISATION_ACTION, 'text': _plain(threadvault.localisation.translate('home.resynchronisation', language)), 'confirm': _confirmation('resynchronisation', 'primary', language)}]})
+    if role == 'owner':
 
-    buttons = [_button(github = github, language = language)]
-
-    if github == 'connected': buttons.extend({'type': 'button', 'action_id': action, 'text': _plain(threadvault.localisation.translate(key, language))} for action, key in ((DESTINATION_ACTION, 'home.destination.choice'), (CREATION_ACTION, 'home.destination.creation')))
-
-    buttons.append({'type': 'button', 'action_id': SETTINGS_ACTION, 'text': _plain(threadvault.localisation.translate('home.settings', language))})
-
-    if role in ('owner', 'operator'): blocks.append({'type': 'actions', 'elements': buttons})
-    if role in ('owner', 'operator') and github == 'uninstalled': blocks.append({'type': 'section', 'text': _text(threadvault.localisation.translate('home.installation', language), threadvault.localisation.translate('home.installation.missing', language, url = f'https://github.com/apps/{slug}/installations/new'))})
-    if role == 'owner': blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': action, 'text': _plain(threadvault.localisation.translate(key, language))} for action, key in ((PERMISSIONS_ACTION, 'home.permissions'), (TRANSFER_ACTION, 'home.transfer'))]})
+        blocks.extend([{'type': 'divider'}, _heading(threadvault.localisation.translate('home.heading.owner', language))])
+        blocks.append(_item(threadvault.localisation.translate('home.permissions', language), threadvault.localisation.translate('home.permissions.caution', language), _action(PERMISSIONS_ACTION, threadvault.localisation.translate('home.permissions.action', language), style = 'danger')))
+        blocks.append(_item(threadvault.localisation.translate('home.transfer', language), threadvault.localisation.translate('home.transfer.caution', language), _action(TRANSFER_ACTION, threadvault.localisation.translate('home.transfer.action', language), style = 'danger')))
 
     return {'type': 'home', 'blocks': blocks}
 
@@ -182,6 +187,46 @@ def respond(
         case _: text = threadvault.localisation.translate('connection.failure', language, message = str(error))
 
     return _modal(threadvault.localisation.translate('connection.title', language), text, language)
+
+def install(
+    *,
+    slug: str,
+    language: threadvault.configuration.Language
+) -> dict[str, typing.Any]:
+
+    """Builds the modal that asks for the GitHub App to be installed while GitHub is connected but the App has no installation.
+
+    It links to the page that installs the GitHub App, and offers to
+    disconnect GitHub, for when the admin connected the wrong account.
+
+    Args:
+        slug: URL slug of the GitHub App.
+        language: Language of the admin.
+
+    Returns:
+        The view, as views.open takes it.
+    """
+
+    link = {'type': 'button', 'action_id': LINK_ACTION, 'style': 'primary', 'url': f'https://github.com/apps/{slug}/installations/new', 'text': _plain(threadvault.localisation.translate('installation.link', language))}
+    blocks = [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': threadvault.localisation.translate('installation.text', language)}}, {'type': 'actions', 'elements': [link]}, {'type': 'section', 'text': {'type': 'mrkdwn', 'text': threadvault.localisation.translate('installation.account', language)}}, {'type': 'actions', 'elements': [_button(github = 'connected', language = language)]}]
+
+    return {'type': 'modal', 'title': _plain(threadvault.localisation.translate('installation.title', language)), 'close': _plain(threadvault.localisation.translate('modal.close', language)), 'blocks': blocks}
+
+def disconnect(
+    *,
+    language: threadvault.configuration.Language
+) -> dict[str, typing.Any]:
+
+    """Builds the modal that tells the admin that GitHub is disconnected, once they disconnect it from the modal that installs the GitHub App.
+
+    Args:
+        language: Language of the admin.
+
+    Returns:
+        The view, as views.update takes it.
+    """
+
+    return _modal(threadvault.localisation.translate('installation.title', language), threadvault.localisation.translate('disconnection.success', language), language)
 
 def offer(
     *,
@@ -437,6 +482,39 @@ def configure(
 
     return {'type': 'modal', 'callback_id': SETTINGS_CALLBACK, 'title': _plain(threadvault.localisation.translate('settings.title', language)), 'submit': _plain(threadvault.localisation.translate('settings.submit', language)), 'close': _plain(threadvault.localisation.translate('settings.close', language)), 'blocks': blocks}
 
+def _heading(
+    text: str
+) -> dict[str, typing.Any]:
+
+    return {'type': 'header', 'text': _plain(text)}
+
+def _item(
+    title: str,
+    text: str | None,
+    accessory: dict[str, typing.Any] | None
+) -> dict[str, typing.Any]:
+
+    block = {'type': 'section', 'text': _text(title, text) if text is not None else {'type': 'mrkdwn', 'text': f'*{title}*'}}
+
+    if accessory is not None: block['accessory'] = accessory
+
+    return block
+
+def _action(
+    action: str,
+    text: str,
+    *,
+    style: str | None = None,
+    confirmation: dict[str, typing.Any] | None = None
+) -> dict[str, typing.Any]:
+
+    button = {'type': 'button', 'action_id': action, 'text': _plain(text)}
+
+    if style is not None: button['style'] = style
+    if confirmation is not None: button['confirm'] = confirmation
+
+    return button
+
 def _button(
     *,
     github: GitHubState,
@@ -445,8 +523,9 @@ def _button(
 
     if github == 'disconnected': return {'type': 'button', 'action_id': CONNECTION_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.github.connection', language))}
     if github == 'expired': return {'type': 'button', 'action_id': CONNECTION_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.github.reconnection', language))}
+    if github == 'uninstalled': return {'type': 'button', 'action_id': INSTALLATION_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.github.installation', language))}
 
-    return {'type': 'button', 'action_id': DISCONNECTION_ACTION, 'style': 'danger', 'text': _plain(threadvault.localisation.translate('home.github.disconnection', language)), 'confirm': _confirmation('disconnection', 'danger', language)}
+    return {'type': 'button', 'action_id': DISCONNECTION_ACTION, 'text': _plain(threadvault.localisation.translate('home.github.disconnection', language)), 'confirm': _confirmation('disconnection', 'danger', language)}
 
 def _confirmation(
     key: str,
@@ -467,10 +546,10 @@ def _report(
 
     time = _date(last.completion)
 
-    if last.commit is None: text, detail = threadvault.localisation.translate('home.backup.failure', language, time = time), last.reason
-    else: text, detail = threadvault.localisation.translate('home.backup.success', language, time = time), f'<https://github.com/{last.repository}/commit/{last.commit}|{last.commit[:7]}>'
+    if role not in ('owner', 'operator'): return threadvault.localisation.translate('home.backup.failure' if last.commit is None else 'home.backup.success', language, time = time)
+    if last.commit is None: return f"{threadvault.localisation.translate('home.backup.failure', language, time = time)}\n{last.reason}"
 
-    return f'{text}\n{detail}' if role in ('owner', 'operator') else text
+    return threadvault.localisation.translate('home.backup.success.commit', language, time = time, commit = f'<https://github.com/{last.repository}/commit/{last.commit}|{last.commit[:7]}>')
 
 def _date(
     moment: datetime.datetime

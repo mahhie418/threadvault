@@ -144,7 +144,7 @@ def register(
 
         workspace = store.load(team)
 
-        application.client.views_publish(user_id = user, view = threadvault.slack.view.home(github = inspect(), destination = workspace.repository_name, running = worker.busy(), last = journal.load(team), planned = plan(team, datetime.datetime.now(datetime.UTC)), role = threadvault.slack.permission.role(settings, workspace, user), slug = settings.github_app_slug, language = choose(user)))
+        application.client.views_publish(user_id = user, view = threadvault.slack.view.home(github = inspect(), destination = workspace.repository_name, running = worker.busy(), last = journal.load(team), planned = plan(team, datetime.datetime.now(datetime.UTC)), role = threadvault.slack.permission.role(settings, workspace, user), language = choose(user)))
 
     def show(
         modal: str,
@@ -355,6 +355,7 @@ def register(
 
     def disconnect(
         ack: slack_bolt.Ack,
+        body: dict[str, typing.Any],
         context: slack_bolt.BoltContext
     ) -> None:
 
@@ -365,6 +366,28 @@ def register(
         manager.delete()
         refresh(context.team_id, context.user_id)
         notify(context.team_id, 'notice.disconnection', user = context.user_id)
+
+        container: dict[str, typing.Any] = body.get('view', {})
+
+        if container.get('type') == 'modal': show(container['id'], threadvault.slack.view.disconnect(language = choose(context.user_id)))
+
+    def install(
+        ack: slack_bolt.Ack,
+        body: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        ack()
+
+        if context.user_id is None: return
+
+        application.client.views_open(trigger_id = body['trigger_id'], view = threadvault.slack.view.install(slug = settings.github_app_slug, language = choose(context.user_id)))
+
+    def follow(
+        ack: slack_bolt.Ack
+    ) -> None:
+
+        ack()
 
     def offer(
         ack: slack_bolt.Ack,
@@ -636,6 +659,8 @@ def register(
     application.event('message')(note)
     application.action(threadvault.slack.view.CONNECTION_ACTION)(connect)
     application.action(threadvault.slack.view.DISCONNECTION_ACTION)(disconnect)
+    application.action(threadvault.slack.view.INSTALLATION_ACTION)(install)
+    application.action(threadvault.slack.view.LINK_ACTION)(follow)
     application.action(threadvault.slack.view.DESTINATION_ACTION)(offer)
     application.view(threadvault.slack.view.DESTINATION_CALLBACK)(submit)
     application.options(threadvault.slack.view.REPOSITORY_ACTION)(suggest)
