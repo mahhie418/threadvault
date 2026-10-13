@@ -33,6 +33,7 @@ import threadvault.vault.state
 ATTRIBUTES_FILE = '.gitattributes'
 _ATTRIBUTES_CONTENT = '*.json text eol=lf\n*.md text eol=lf\n'
 VAULTS_DIRECTORY = 'vaults'
+_RENAMES_FILE = 'renames.json'
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,7 +88,8 @@ def run(
     yet, and every channel when `days` is None, is fetched in full, and
     nothing is deleted from it. Any other channel is fetched for the last
     `days` days and merged into what the vault holds.
-    A renamed channel first moves to the directory of its new name. The vault
+    A renamed channel first moves to the directory of its new name. Moves
+    are recorded before they start and resumed after an interruption. The vault
     then gets the users and the channels, the messages of each channel as
     Slack's export writes them, the Markdown of each channel and its index,
     and the state file. When the settings enable attachments, the attached
@@ -132,6 +134,9 @@ def run(
     joined = _join(client, channels, settings)
     targets = [channel for channel in channels if (channel.get('is_member') or channel['id'] in joined) and (settings.channel_mode == 'joined' or channel['id'] in settings.channels_selected)]
     members = {channel['id']: threadvault.slack.api.members(client, channel['id']) for channel in targets}
+
+    _recover(vault)
+
     previous = threadvault.vault.state.load(vault)
     directories = threadvault.vault.layout.assign({channel['id']: channel['name'] for channel in targets}, previous)
     raw = pathlib.Path(os.path.join(vault, threadvault.vault.export.RAW_DIRECTORY))
@@ -140,7 +145,7 @@ def run(
     marked = backlog or threadvault.backup.backlog.Backlog()
     results = []
 
-    _move((raw, transcripts), previous, directories)
+    _move(vault, previous, directories)
 
     raw.mkdir(parents = True, exist_ok = True)
     threadvault.vault.export.users(raw, users)
@@ -364,25 +369,103 @@ def _download(
     return saved, failed
 
 def _move(
-    parents: collections.abc.Iterable[pathlib.Path],
+    vault: pathlib.Path,
     previous: collections.abc.Mapping[str, str],
     directories: collections.abc.Mapping[str, str]
 ) -> None:
 
     moves = {channel: (previous[channel], directory) for channel, directory in directories.items() if previous.get(channel, directory) != directory}
-    steps = [(old, f'.{channel}') for channel, (old, _) in moves.items()] + [(f'.{channel}', new) for channel, (_, new) in moves.items()]
+    progress = {channel: directories[channel] for channel in previous}
+
+    _check(vault, set(previous.values()) | set(directories.values()) | {f'.{channel}' for channel in moves})
+
+    if not moves: return
+
+    _record(vault, {'directories': progress, 'moves': moves, 'phase': 'staging'})
+    _recover(vault)
+
+def _recover(
+    vault: pathlib.Path
+) -> None:
+
+    path = pathlib.Path(os.path.join(vault, threadvault.vault.state.STATE_DIRECTORY, _RENAMES_FILE))
+
+    try: text = path.read_text(encoding = 'utf-8')
+    except FileNotFoundError: return
+
+    try: record = json.loads(text)
+    except json.JSONDecodeError: raise threadvault.vault.state.StateError(f'{path} is not valid JSON') from None
+
+    match record:
+
+        case {'directories': {**directories}, 'moves': {**moves}, 'phase': ('staging' | 'placing') as phase} if all(isinstance(name, str) and threadvault.vault.layout.validate(name) for name in directories.values()) and all(map(_validate_move, moves.values())): parents = _check(vault, set(directories.values()) | {name for pair in moves.values() for name in pair} | {f'.{channel}' for channel in moves})
+        case _: raise threadvault.vault.state.StateError(f'{path} is not a rename record of {threadvault.product.NAME}')
+
+    if phase == 'staging':
+
+        for parent in parents:
+
+            for channel, (old, _) in moves.items():
+
+                source, temporary = _locate(parent, old), _locate(parent, f'.{channel}')
+
+                if source.exists() and not temporary.exists(): source.rename(temporary)
+
+        record['phase'] = 'placing'
+        _record(vault, record)
+
+    for parent in parents:
+
+        for channel, (_, new) in moves.items():
+
+            temporary = _locate(parent, f'.{channel}')
+
+            if temporary.exists(): temporary.rename(_locate(parent, new))
+
+    threadvault.vault.state.save(vault, directories)
+    path.unlink()
+
+def _validate_move(
+    pair: object
+) -> bool:
+
+    match pair:
+
+        case [str() as old, str() as new]: return threadvault.vault.layout.validate(old) and threadvault.vault.layout.validate(new)
+        case _: return False
+
+def _record(
+    vault: pathlib.Path,
+    record: dict[str, typing.Any]
+) -> None:
+
+    path = pathlib.Path(os.path.join(vault, threadvault.vault.state.STATE_DIRECTORY, _RENAMES_FILE))
+    temporary = path.with_name(f'{path.name}.tmp')
+    path.parent.mkdir(parents = True, exist_ok = True)
+
+    try:
+
+        temporary.write_text(f'{json.dumps(record, ensure_ascii = False, sort_keys = True)}\n', encoding = 'utf-8', newline = '\n')
+        temporary.replace(path)
+
+    finally:
+
+        temporary.unlink(missing_ok = True)
+
+def _check(
+    vault: pathlib.Path,
+    names: collections.abc.Collection[str]
+) -> tuple[pathlib.Path, pathlib.Path]:
+
+    parents = (pathlib.Path(os.path.join(vault, threadvault.vault.export.RAW_DIRECTORY)), pathlib.Path(os.path.join(vault, threadvault.vault.markdown.TRANSCRIPTS_DIRECTORY)))
 
     for parent in parents:
 
         if parent.resolve().parent != parent.parent.resolve(): raise threadvault.vault.state.StateError(f'{parent} points outside the vault')
 
-        for directory in set(previous.values()) | set(directories.values()): _locate(parent, directory)
+        for name in names: _locate(parent, name)
 
-        paths = [(_locate(parent, source), _locate(parent, target)) for source, target in steps]
-
-        for source, target in paths:
-
-            if source.exists(): source.rename(target)
+    return parents
 
 def _locate(
     parent: pathlib.Path,

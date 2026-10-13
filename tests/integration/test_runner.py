@@ -31,6 +31,8 @@ MESSAGES_DELETION = {'1510880400.000000', '1791075600.000001'}
 MODES_TRAVERSAL = ['relative', 'absolute']
 TARGETS_SYMLINK = ['external', 'internal', 'missing']
 
+RENAMES_INTERRUPTED = ['fetch', *range(8)]
+
 THREAD_INSERTION = [
     {'latest_reply': '1791160200.000000', 'reply_count': 1, 'text': 'xxx', 'thread_ts': '1791158400.000000', 'ts': '1791158400.000000', 'type': 'message', 'user': 'UXXX1'},
     {'parent_user_id': 'UXXX1', 'text': 'xxx', 'thread_ts': '1791158400.000000', 'ts': '1791160200.000000', 'type': 'message', 'user': 'UXXX2'}
@@ -207,6 +209,54 @@ def test_runner_vault_rename(
 
     assert survey(tmp_path) == FILES_EXPECTED
     assert threadvault.vault.state.load(tmp_path) == {'CXXX1': 'xxx', 'CXXX2': 'general'}
+
+@pytest.mark.parametrize('stage', RENAMES_INTERRUPTED)
+def test_runner_vault_recovery(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient,
+    stage: str | int
+) -> None:
+
+    workspace['messages']['CXXX2'] = [{'text': 'xxx', 'ts': '1510880401.000000', 'type': 'message', 'user': 'UXXX1'}]
+    expected = {channel: {message['ts'] for message in messages} for channel, messages in workspace['messages'].items()}
+    run(slack, tmp_path)
+
+    for channel in workspace['channels']: channel['name'] = {'CXXX1': 'xxx', 'CXXX2': 'general'}[channel['id']]
+
+    rename = pathlib.Path.rename
+    count = 0
+
+    def interrupt(
+        source: pathlib.Path,
+        target: pathlib.Path
+    ) -> pathlib.Path:
+
+        nonlocal count
+
+        if count == stage: raise ConnectionError('xxx')
+
+        count += 1
+
+        return rename(source, target)
+
+    with monkeypatch.context() as patches:
+
+        if stage == 'fetch': patches.setattr(threadvault.slack.api, 'history', unittest.mock.Mock(side_effect = ConnectionError('xxx')))
+        else: patches.setattr(pathlib.Path, 'rename', interrupt)
+
+        with pytest.raises(ConnectionError): run(slack, tmp_path)
+
+    run(slack, tmp_path)
+
+    for channel, directory in {'CXXX1': 'xxx', 'CXXX2': 'general'}.items():
+
+        messages = [message for file in pathlib.Path(os.path.join(tmp_path, 'raw', directory)).glob('*.json') for message in json.loads(file.read_text(encoding = 'utf-8'))]
+
+        assert {message['ts'] for message in messages} == expected[channel]
+
+    assert [file.name for file in pathlib.Path(os.path.join(tmp_path, '.threadvault')).iterdir()] == ['state.json']
 
 def test_runner_vault_addition(
     tmp_path: pathlib.Path,
