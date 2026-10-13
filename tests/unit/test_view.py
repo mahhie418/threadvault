@@ -16,7 +16,7 @@ RUN_FAILED = threadvault.journal.Run(completion = datetime.datetime(2026, 10, 8,
 TIME_PLANNED = datetime.datetime(2026, 10, 9, 15, 0, tzinfo = datetime.UTC)
 
 STATES_HOME = [
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_SUCCEEDED, 'planned': TIME_PLANNED, 'role': 'owner', 'language': 'ja'}, ['*前回のバックアップ*\n<!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC> に成功しました (<https://github.com/xxx/xxx1/commit/0123456789abcdef0123456789abcdef01234567|0123456>)', '*次回のバックアップ*\n<!date^1791558000^{date_short} {time}|2026-10-09 15:00 UTC>', '*全体の再同期*', '*連携状態*\n連携済み', '*保存先*\n<https://github.com/xxx/xxx|xxx/xxx>', '*管理者の権限*\n操作を許可した管理者は、GitHub の連携、保存先、設定を変更できます。', '*オーナーの譲渡*\n譲渡すると、あなたはオーナーの操作ができなくなります。']),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_SUCCEEDED, 'planned': TIME_PLANNED, 'role': 'owner', 'language': 'ja'}, ['*前回のバックアップ*\n<!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC> に成功しました (<https://github.com/xxx/xxx1/commit/0123456789abcdef0123456789abcdef01234567|0123456>)', '*次回のバックアップ*\n<!date^1791558000^{date_short} {time}|2026-10-09 15:00 UTC>', '*連携状態*\n連携済み', '*保存先*\n<https://github.com/xxx/xxx|xxx/xxx>', '*管理者の権限*\n操作を許可した管理者は、GitHub の連携、保存先、設定を変更できます。', '*オーナーの譲渡*\n譲渡すると、あなたはオーナーの操作ができなくなります。']),
     ({'github': 'connected', 'destination': 'xxx/xxx', 'last': RUN_SUCCEEDED, 'planned': TIME_PLANNED, 'role': 'member', 'language': 'en'}, ['*Last backup*\nSucceeded at <!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC>', '*Next backup*\n<!date^1791558000^{date_short} {time}|2026-10-09 15:00 UTC>']),
     ({'github': 'disconnected', 'destination': None, 'last': None, 'planned': None, 'role': 'operator', 'language': 'en'}, ['*Last backup*\nNone yet', '*Next backup*\nNot scheduled', '*Connection*\nNot connected', '*Destination*\nNot chosen']),
     ({'github': 'expired', 'destination': None, 'last': RUN_FAILED, 'planned': None, 'role': 'operator', 'language': 'en'}, ['*Last backup*\nFailed at <!date^1791471600^{date_short} {time}|2026-10-08 15:00 UTC>\nxxx', '*Next backup*\nNot scheduled', '*Connection*\nNeeds reconnecting', '*Destination*\nNot chosen']),
@@ -52,8 +52,8 @@ VIEWERS_MESSAGE = [
 ]
 
 VIEWERS_BACKUP = [
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'owner'}, [(threadvault.slack.view.BACKUP_ACTION, 'Back up now', 'primary', False), (threadvault.slack.view.RESYNCHRONISATION_ACTION, 'Resynchronise', None, True)], '*Last backup*\nNone yet'),
-    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'operator'}, [(threadvault.slack.view.BACKUP_ACTION, 'Back up now', 'primary', False), (threadvault.slack.view.RESYNCHRONISATION_ACTION, 'Resynchronise', None, True)], '*Last backup*\nNone yet'),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'owner'}, [(threadvault.slack.view.BACKUP_ACTION, 'Back up now', 'primary', False)], '*Last backup*\nNone yet'),
+    ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'operator'}, [(threadvault.slack.view.BACKUP_ACTION, 'Back up now', 'primary', False)], '*Last backup*\nNone yet'),
     ({'github': 'connected', 'destination': 'xxx/xxx', 'running': False, 'role': 'admin'}, [], '*Last backup*\nNone yet'),
     ({'github': 'connected', 'destination': 'xxx/xxx', 'running': True, 'role': 'owner'}, [], '*Last backup*\nNone yet\nBacking up the workspace…'),
     ({'github': 'connected', 'destination': 'xxx/xxx', 'running': True, 'role': 'member'}, [], '*Last backup*\nNone yet\nBacking up the workspace…'),
@@ -158,7 +158,7 @@ def test_view_home_backup(
 
     view = threadvault.slack.view.home(**state, last = None, planned = None, language = 'en')
 
-    assert [(block['accessory']['action_id'], block['accessory']['text']['text'], block['accessory'].get('style'), 'confirm' in block['accessory']) for block in view['blocks'] if block.get('accessory', {}).get('action_id') in (threadvault.slack.view.BACKUP_ACTION, threadvault.slack.view.RESYNCHRONISATION_ACTION)] == buttons
+    assert [(block['accessory']['action_id'], block['accessory']['text']['text'], block['accessory'].get('style'), 'confirm' in block['accessory']) for block in view['blocks'] if block.get('accessory', {}).get('action_id') == threadvault.slack.view.BACKUP_ACTION] == buttons
     assert next(block['text']['text'] for block in view['blocks'] if block['type'] == 'section') == text
 
 @pytest.mark.parametrize(('code', 'text'), CONNECTIONS_MESSAGE)
@@ -300,6 +300,14 @@ def test_view_transfer_confirmation() -> None:
 
     assert (view['callback_id'], view['private_metadata'], view['close']['text']) == (threadvault.slack.view.TRANSFER_CONFIRMATION, 'UXXX2', 'Back')
     assert [block['text']['text'] for block in view['blocks']] == ['Transfer the ownership to <@UXXX2>? You stay an admin with permission to operate the app.']
+
+def test_view_backup_choice() -> None:
+
+    view = threadvault.slack.view.prepare(language = 'en')
+    element = view['blocks'][0]['element']
+
+    assert (view['callback_id'], element['action_id'], element['initial_option']['value']) == (threadvault.slack.view.BACKUP_CALLBACK, threadvault.slack.view.SCOPE_INPUT, 'recent')
+    assert [(option['value'], option['text']['text'], option.get('description', {}).get('text')) for option in element['options']] == [('recent', 'Recent days (as usual)', None), ('full', 'Whole history again', 'Every channel is fetched again from the start. Nothing is deleted from the vault. This can take a long time.')]
 
 @pytest.mark.parametrize(('settings', 'values'), SETTINGS_STATUS)
 def test_view_settings_configuration(

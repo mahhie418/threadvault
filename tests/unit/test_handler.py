@@ -66,14 +66,14 @@ CONNECTIONS_EXPIRED = [
     (TOKENS_SAVED, httpx.Response(401, json = {'message': 'Bad credentials'}))
 ]
 
-ACTIONS_STARTED = [
-    (threadvault.slack.view.BACKUP_ACTION, 30),
-    (threadvault.slack.view.RESYNCHRONISATION_ACTION, None)
+SCOPES_STARTED = [
+    ('recent', 30),
+    ('full', None)
 ]
 
-ACTIONS_REFUSED = [
-    threadvault.slack.view.BACKUP_ACTION,
-    threadvault.slack.view.RESYNCHRONISATION_ACTION
+SCOPES_REFUSED = [
+    'recent',
+    'full'
 ]
 
 ERRORS_BACKUP = [
@@ -265,6 +265,12 @@ def named(
 ) -> dict[str, typing.Any]:
 
     return {'callback_id': threadvault.slack.view.CREATION_CALLBACK, 'state': {'values': {threadvault.slack.view.ACCOUNT_INPUT: {threadvault.slack.view.ACCOUNT_INPUT: {'type': 'static_select', 'selected_option': {'text': {'type': 'plain_text', 'text': account}, 'value': account}}}, threadvault.slack.view.NAME_INPUT: {threadvault.slack.view.NAME_INPUT: {'type': 'plain_text_input', 'value': name}}}}}
+
+def scoped(
+    scope: str
+) -> dict[str, typing.Any]:
+
+    return {'callback_id': threadvault.slack.view.BACKUP_CALLBACK, 'state': {'values': {threadvault.slack.view.SCOPE_INPUT: {threadvault.slack.view.SCOPE_INPUT: {'type': 'radio_buttons', 'selected_option': {'value': scope}}}}}}
 
 def configured(
     settings: threadvault.customisation.Settings
@@ -729,14 +735,23 @@ def test_handler_creation_failure(
     assert calls(workspace, 'views.update') == [{'view_id': 'VXXX', 'view': threadvault.slack.view.establish(repository = f'xxx/{name}', outcome = 'failure', language = 'ja', message = message)}]
     assert calls(workspace, 'chat.postMessage') == []
 
-@pytest.mark.parametrize(('action', 'days'), ACTIONS_STARTED)
+def test_handler_backup_offer(
+    application: slack_bolt.App,
+    workspace: dict[str, typing.Any]
+) -> None:
+
+    assert press(application, 'UXXX1', threadvault.slack.view.BACKUP_ACTION).status == 200
+    assert calls(workspace, 'views.open') == [{'trigger_id': 'xxx', 'view': threadvault.slack.view.prepare(language = 'ja')}]
+    assert calls(workspace, 'views.publish') == []
+
+@pytest.mark.parametrize(('scope', 'days'), SCOPES_STARTED)
 def test_handler_backup_start(
     monkeypatch: pytest.MonkeyPatch,
     application: slack_bolt.App,
     workspace: dict[str, typing.Any],
     database: threadvault.storage.Database,
     manager: threadvault.github.token.TokenManager,
-    action: str,
+    scope: str,
     days: int | None
 ) -> None:
 
@@ -768,7 +783,7 @@ def test_handler_backup_start(
 
         respx.get(f'{threadvault.github.rest.API_URL}/user/installations').respond(200, json = INSTALLATIONS_RESPONDED)
 
-        assert press(application, 'UXXX1', action).status == 200
+        assert submit(application, 'UXXX1', scoped(scope)).status == 200
 
     last = threadvault.journal.RunIO(database).load('TXXX')
     planned = threadvault.schedule.ScheduleIO(database).load('TXXX')
@@ -793,7 +808,7 @@ def test_handler_backup_failure(
     threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = 'xxx/xxx'), update_user = 'UXXX1')
     threadvault.backup.backlog.BacklogIO(database).mark('TXXX', 'CXXX1', '1510963199.000000', TIME_CHECKED)
 
-    assert press(application, 'UXXX1', threadvault.slack.view.BACKUP_ACTION).status == 200
+    assert submit(application, 'UXXX1', scoped('recent')).status == 200
 
     last = threadvault.journal.RunIO(database).load('TXXX')
     planned = threadvault.schedule.ScheduleIO(database).load('TXXX')
@@ -814,17 +829,17 @@ def test_handler_backup_absence(
 
     monkeypatch.setattr(threadvault.backup.runner, 'publish', publish)
 
-    assert press(application, 'UXXX1', threadvault.slack.view.BACKUP_ACTION).status == 200
+    assert submit(application, 'UXXX1', scoped('recent')).status == 200
     assert not publish.called
     assert [arguments['view'] for arguments in calls(workspace, 'views.publish')] == [threadvault.slack.view.home(github = 'disconnected', destination = None, running = running, last = None, planned = None, role = 'owner', language = 'ja') for running in (True, False)]
 
-@pytest.mark.parametrize('action', ACTIONS_REFUSED)
+@pytest.mark.parametrize('scope', SCOPES_REFUSED)
 def test_handler_backup_exclusivity(
     monkeypatch: pytest.MonkeyPatch,
     application: slack_bolt.App,
     workspace: dict[str, typing.Any],
     database: threadvault.storage.Database,
-    action: str
+    scope: str
 ) -> None:
 
     def busy(
@@ -846,7 +861,7 @@ def test_handler_backup_exclusivity(
     monkeypatch.setattr(threadvault.worker.Worker, 'start', start)
     threadvault.customisation.SettingsIO(database).save('TXXX', threadvault.customisation.Settings(repository_name = 'xxx/xxx'), update_user = 'UXXX1')
 
-    assert press(application, 'UXXX1', action).status == 200
+    assert submit(application, 'UXXX1', scoped(scope)).status == 200
 
     planned = threadvault.schedule.ScheduleIO(database).load('TXXX')
 

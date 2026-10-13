@@ -58,8 +58,8 @@ def register(
     background, one at a time, as `threadvault.worker.Worker` makes sure, and
     the App Home of whoever started it shows the backup while it runs. Every
     App Home shows how the last backup ended, and the owner and the allowed
-    admins hear by direct message when a backup fails. A resynchronisation is
-    a backup that fetches every channel in full and deletes nothing. Once the
+    admins hear by direct message when a backup fails. A backup started from
+    the App Home can fetch every channel in full, deleting nothing. Once the
     destination is chosen, the daily backup runs at the time in the settings
     of the workspace, and one missed while the app was stopped runs as soon
     as the app runs again. The settings say whether it runs and its time and
@@ -460,8 +460,21 @@ def register(
         ack(response_action = 'update', view = threadvault.slack.view.establish(repository = repository, outcome = 'check', language = language))
         detach(lambda: establish(team, user, view['id'], repository, language))
 
+    def prepare(
+        ack: slack_bolt.Ack,
+        body: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        ack()
+
+        if context.user_id is None: return
+
+        application.client.views_open(trigger_id = body['trigger_id'], view = threadvault.slack.view.prepare(language = choose(context.user_id)))
+
     def launch(
         ack: slack_bolt.Ack,
+        view: dict[str, typing.Any],
         context: slack_bolt.BoltContext
     ) -> None:
 
@@ -471,20 +484,10 @@ def register(
 
         if team is None or user is None: return
 
-        if not worker.start(lambda: perform(team, user, settings.threadvault_lookback_days), lambda: refresh(team, user)): refresh(team, user)
+        values = view['state']['values']
+        days = None if values[threadvault.slack.view.SCOPE_INPUT][threadvault.slack.view.SCOPE_INPUT]['selected_option']['value'] == 'full' else settings.threadvault_lookback_days
 
-    def resynchronise(
-        ack: slack_bolt.Ack,
-        context: slack_bolt.BoltContext
-    ) -> None:
-
-        ack()
-
-        team, user = context.team_id, context.user_id
-
-        if team is None or user is None: return
-
-        if not worker.start(lambda: perform(team, user, None), lambda: refresh(team, user)): refresh(team, user)
+        if not worker.start(lambda: perform(team, user, days), lambda: refresh(team, user)): refresh(team, user)
 
     def configure(
         ack: slack_bolt.Ack,
@@ -667,8 +670,8 @@ def register(
     application.options(threadvault.slack.view.REPOSITORY_ACTION)(suggest)
     application.action(threadvault.slack.view.CREATION_ACTION)(propose)
     application.view(threadvault.slack.view.CREATION_CALLBACK)(create)
-    application.action(threadvault.slack.view.BACKUP_ACTION)(launch)
-    application.action(threadvault.slack.view.RESYNCHRONISATION_ACTION)(resynchronise)
+    application.action(threadvault.slack.view.BACKUP_ACTION)(prepare)
+    application.view(threadvault.slack.view.BACKUP_CALLBACK)(launch)
     application.action(threadvault.slack.view.SETTINGS_ACTION)(configure)
     application.options(threadvault.slack.view.TIMEZONE_ACTION)(search)
     application.view(threadvault.slack.view.SETTINGS_CALLBACK)(adjust)

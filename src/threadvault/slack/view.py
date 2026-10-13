@@ -16,7 +16,7 @@ type DestinationOutcome = typing.Literal['check', 'success', 'absence', 'publici
 type CreationOutcome = typing.Literal['check', 'success', 'failure']
 
 BACKUP_ACTION = 'backup_action'
-RESYNCHRONISATION_ACTION = 'resynchronisation_action'
+BACKUP_CALLBACK = 'backup_callback'
 CONNECTION_ACTION = 'connection_action'
 DISCONNECTION_ACTION = 'disconnection_action'
 INSTALLATION_ACTION = 'installation_action'
@@ -48,6 +48,7 @@ JOINING_INPUT = 'joining_input'
 ATTACHMENTS_INPUT = 'attachments_input'
 SIZE_INPUT = 'size_input'
 LANGUAGE_INPUT = 'language_input'
+SCOPE_INPUT = 'scope_input'
 
 _OPTION_LIMIT = 100
 _DISPLAY_LIMIT = 75
@@ -79,8 +80,7 @@ def home(
 
     While a backup is running, everyone sees so. Otherwise, while GitHub is
     connected and the destination is chosen, the owner and the admins allowed
-    to operate the app see a button that backs up the workspace at once, and
-    one that resynchronises the whole workspace once they confirm it.
+    to operate the app see a button that backs up the workspace at once.
 
     The owner and the admins also see their own role.
     The owner and the admins allowed to operate the app see a button that
@@ -124,8 +124,6 @@ def home(
     blocks.append(_heading(threadvault.localisation.translate('home.heading.backup', language)))
     blocks.append(_item(threadvault.localisation.translate('home.backup.last', language), report, _action(BACKUP_ACTION, threadvault.localisation.translate('home.backup', language), style = 'primary') if role in ('owner', 'operator') and github == 'connected' and destination and not running else None))
     blocks.append(_item(threadvault.localisation.translate('home.schedule', language), _date(planned) if planned else threadvault.localisation.translate('home.schedule.missing', language), _action(SETTINGS_ACTION, threadvault.localisation.translate('home.settings', language)) if role in ('owner', 'operator') else None))
-
-    if role in ('owner', 'operator') and github == 'connected' and destination and not running: blocks.append(_item(threadvault.localisation.translate('home.resynchronisation', language), None, _action(RESYNCHRONISATION_ACTION, threadvault.localisation.translate('home.resynchronisation.action', language), confirmation = _confirmation('resynchronisation', 'primary', language))))
 
     if role in ('owner', 'operator'):
 
@@ -439,6 +437,30 @@ def nominate(
 
     return {'type': 'modal', 'callback_id': TRANSFER_CONFIRMATION, 'private_metadata': successor, 'title': _plain(threadvault.localisation.translate('transfer.title', language)), 'submit': _plain(threadvault.localisation.translate('transfer.confirm', language)), 'close': _plain(threadvault.localisation.translate('transfer.back', language)), 'blocks': [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': threadvault.localisation.translate('transfer.question', language, user = successor)}}]}
 
+def prepare(
+    *,
+    language: threadvault.configuration.Language
+) -> dict[str, typing.Any]:
+
+    """Builds the modal that backs up the workspace at once.
+
+    The admin chooses whether the backup fetches the recent days again, as
+    the daily backup does, or the whole history of every channel again,
+    which deletes nothing from the vault and can take a long time.
+
+    Args:
+        language: Language of the admin.
+
+    Returns:
+        The view, as views.open takes it.
+    """
+
+    scopes = {scope: {'text': _plain(threadvault.localisation.translate(f'backup.scope.{scope}', language)), 'value': scope} for scope in ('recent', 'full')}
+    scopes['full']['description'] = _plain(threadvault.localisation.translate('backup.scope.full.description', language))
+    block = {'type': 'input', 'block_id': SCOPE_INPUT, 'label': _plain(threadvault.localisation.translate('backup.scope', language)), 'element': {'type': 'radio_buttons', 'action_id': SCOPE_INPUT, 'options': list(scopes.values()), 'initial_option': scopes['recent']}}
+
+    return {'type': 'modal', 'callback_id': BACKUP_CALLBACK, 'title': _plain(threadvault.localisation.translate('backup.title', language)), 'submit': _plain(threadvault.localisation.translate('backup.submit', language)), 'close': _plain(threadvault.localisation.translate('backup.close', language)), 'blocks': [block]}
+
 def configure(
     *,
     workspace: threadvault.customisation.Settings,
@@ -491,11 +513,11 @@ def _heading(
 
 def _item(
     title: str,
-    text: str | None,
+    text: str,
     accessory: dict[str, typing.Any] | None
 ) -> dict[str, typing.Any]:
 
-    block = {'type': 'section', 'text': _text(title, text) if text is not None else {'type': 'mrkdwn', 'text': f'*{title}*'}}
+    block = {'type': 'section', 'text': _text(title, text)}
 
     if accessory is not None: block['accessory'] = accessory
 
@@ -505,14 +527,12 @@ def _action(
     action: str,
     text: str,
     *,
-    style: str | None = None,
-    confirmation: dict[str, typing.Any] | None = None
+    style: str | None = None
 ) -> dict[str, typing.Any]:
 
     button = {'type': 'button', 'action_id': action, 'text': _plain(text)}
 
     if style is not None: button['style'] = style
-    if confirmation is not None: button['confirm'] = confirmation
 
     return button
 
