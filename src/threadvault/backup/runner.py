@@ -394,7 +394,7 @@ def _fetch(
     oldest, latest = threadvault.backup.fetch.window(now, days)
     windows = [(oldest, latest), *threadvault.backup.fetch.days(backlog.days.get(channel, ()), oldest)]
     history = [message for start, end in windows for message in threadvault.slack.api.history(client, channel, oldest = start, latest = end)]
-    threads = {thread_ts: threadvault.slack.api.replies(client, channel, thread_ts) for thread_ts in threadvault.backup.fetch.threads(history, stored, backlog.threads.get(channel, ()))}
+    threads = {thread_ts: threadvault.slack.api.replies(client, channel, thread_ts) for thread_ts in threadvault.backup.fetch.threads(history, () if days is None else stored, backlog.threads.get(channel, ()))}
     outcome = threadvault.vault.merge.merge(stored, history, threads, windows = windows, now = now, limit = limit)
     saved, failed = _download(client, vault, itertools.chain(history, *threads.values()), settings.attachment_size_maximum * 1024 * 1024) if settings.attachments_enabled else (0, 0)
 

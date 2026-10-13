@@ -36,6 +36,7 @@ TARGETS_SYMLINK = ['external', 'internal', 'missing']
 RENAMES_INTERRUPTED = ['fetch', *range(8)]
 DELETIONS_LIMITED = [(0, [(0, 1), (0, 1)]), (1, [(0, 1), (0, 1)]), (2, [(1, 0), (1, 0)]), (None, [(1, 0), (1, 0)])]
 
+THREADS_REFETCHED = [(None, 'xxx2'), (30, 'xxx')]
 RUNS_MEMORY = [(None, None), (30, None), (30, 0), (30, 1)]
 
 THREAD_INSERTION = [
@@ -518,6 +519,22 @@ def test_runner_vault_resynchronisation(
 
     assert directories == ['xxx', 'general']
     assert [(result.messages, result.deleted, result.withheld) for result in results] == [(0, 0, 0), (5, 0, 1)]
+
+@pytest.mark.parametrize(('days', 'text'), THREADS_REFETCHED)
+def test_runner_vault_reply(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient,
+    days: int | None,
+    text: str
+) -> None:
+
+    run(slack, tmp_path)
+    next(message for message in workspace['messages']['CXXX1'] if message['ts'] == '1791072000.000000')['text'] = 'xxx2'
+
+    threadvault.backup.runner.run(slack, tmp_path, SETTINGS, days = days, limit = None, now = NOW)
+
+    assert next(message for message in read(tmp_path, 'general', '2026-10-04.json') if message['ts'] == '1791072000.000000')['text'] == text
 
 def test_runner_vault_publication(
     tmp_path: pathlib.Path,
