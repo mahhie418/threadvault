@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Start of the Slack app at login: a launchd agent on macOS and a scheduled task on Windows."""
 
 import importlib.resources

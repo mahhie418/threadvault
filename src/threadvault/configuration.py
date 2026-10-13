@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Configuration read from environment variables and the settings file of the user, which setup writes."""
 
 import collections.abc

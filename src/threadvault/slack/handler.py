@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Listeners of the Slack app, which answer the events and actions in the workspace."""
 
 import collections.abc

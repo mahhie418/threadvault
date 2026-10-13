@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Threads and days that events in the workspace marked for the next backup to fetch again."""
 
 import collections.abc

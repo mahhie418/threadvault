@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Runs the threadvault command when invoked as `python -m threadvault`."""
 
 import threadvault.terminal

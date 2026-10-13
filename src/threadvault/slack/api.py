@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Calls to Slack for the backup: the Web API, with pagination and retries, and file downloads."""
 
 import collections.abc

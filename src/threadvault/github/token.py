@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """GitHub tokens of the deployment, kept encrypted and refreshed before they expire."""
 
 import collections.abc

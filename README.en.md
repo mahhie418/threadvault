@@ -156,3 +156,7 @@ When a message disappears from Slack, the next backup removes it from the files 
 - On the Free plan, Slack shows only the last 90 days of messages and deletes messages older than a year. The vault keeps what ThreadVault has backed up, so set it up early.
 - The settings file holds the Slack tokens, and on macOS and Linux only you can read it. The GitHub tokens are stored encrypted in the data folder.
 - ThreadVault backs up only to private repositories, and refuses public ones.
+
+## Licence
+
+ThreadVault is released under the MIT License. See [LICENSE](https://github.com/mahhie418/threadvault/blob/main/LICENSE).

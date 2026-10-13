@@ -156,3 +156,7 @@ Slack から削除されたメッセージは、次のバックアップで vaul
 - Slack のフリープランでは、直近 90 日のメッセージしか表示されず、1 年より古いメッセージは削除されます。ThreadVault でバックアップしたものは vault に残るので、早めに使い始めてください。
 - 設定ファイルには Slack のトークンが含まれます。macOS と Linux では、本人だけが読めるように保存します。GitHub のトークンは、暗号化してデータフォルダに保存します。
 - ThreadVault はプライベートリポジトリにだけバックアップし、公開リポジトリへのバックアップは行いません。
+
+## ライセンス
+
+ThreadVault は MIT License で公開しています。詳しくは [LICENSE](https://github.com/mahhie418/threadvault/blob/main/LICENSE) を参照してください。

@@ -30,6 +30,12 @@ repos:
         stages: [pre-commit]
         types_or: [python, pyi]
         args: [--multiline]
+      - id: reuse-lint
+        name: REUSE (Lint)
+        entry: uv run --no-sync reuse lint
+        language: unsupported
+        stages: [pre-commit]
+        pass_filenames: false
       - id: custom-verification
         name: Custom Verification
         entry: uv run --no-sync python scripts/commit.py

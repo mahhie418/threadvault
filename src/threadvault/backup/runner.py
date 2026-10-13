@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """One run that backs up the workspace into a vault directory, or into its vault on GitHub."""
 
 import collections.abc

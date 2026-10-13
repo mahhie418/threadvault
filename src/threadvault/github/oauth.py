@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """GitHub OAuth through the device flow, which connects a GitHub account without a client secret."""
 
 import collections.abc

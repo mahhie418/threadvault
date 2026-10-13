@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Git commands on the clone of the vault, apart from the git settings of the machine."""
 
 import base64

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Short links on this computer that redirect to the long addresses of the pages that setup shows."""
 
 import collections.abc

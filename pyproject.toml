@@ -3,6 +3,8 @@ name = "threadvault"
 version = "0.1.0"
 description = "Back up a Slack workspace to a GitHub repository as an AI-readable vault."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Mahiro Sakaue", email = "mahhie418@gmail.com" }
 ]
@@ -30,6 +32,7 @@ dev = [
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "respx>=0.23.1",
+    "reuse[charset-normalizer]>=6.2.0",
     "ruff>=0.16.10",
     "ty>=0.0.84",
 ]
@@ -40,7 +43,7 @@ src = ["src", "scripts"]
 [tool.ruff.lint]
 select = ["ALL"]
 ignore = [
-    "C90", "CPY", "EM", "INP", "TC", "TRY", "PLR09",
+    "C90", "EM", "INP", "TC", "TRY", "PLR09",
     "COM812", "D201", "D202", "D211", "E501", "E701", "E702", "PTH118"
 ]
 
@@ -58,6 +61,9 @@ ignore = [
     "D",
     "PLR2004", "S101", "S105", "S106", "S603"
 ]
+
+[tool.ruff.lint.flake8-copyright]
+notice-rgx = "SPDX-FileCopyrightText: \\d{4}"
 
 [tool.ruff.lint.flake8-quotes]
 inline-quotes = "single"
