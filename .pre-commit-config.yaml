@@ -1,0 +1,43 @@
+minimum_pre_commit_version: "4.6.2"
+default_install_hook_types: [pre-commit, commit-msg]
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff (Check)
+        entry: uv run --no-sync ruff check --force-exclude
+        language: unsupported
+        stages: [pre-commit]
+        types_or: [python, pyi]
+        require_serial: true
+      - id: ty-check
+        name: ty (Check)
+        entry: uv run --no-sync ty check
+        language: unsupported
+        stages: [pre-commit]
+        types_or: [python, pyi]
+        pass_filenames: false
+      - id: pre-commit-pygrep-import
+        name: pre-commit (pygrep; import)
+        entry: '^\s*from\s+\S+\s+import\b'
+        language: pygrep
+        stages: [pre-commit]
+        types_or: [python, pyi]
+      - id: pre-commit-pygrep-blank
+        name: pre-commit (pygrep; blank)
+        entry: '\n\n\n'
+        language: pygrep
+        stages: [pre-commit]
+        types_or: [python, pyi]
+        args: [--multiline]
+      - id: reuse-lint
+        name: REUSE (Lint)
+        entry: uv run --no-sync reuse lint
+        language: unsupported
+        stages: [pre-commit]
+        pass_filenames: false
+      - id: custom-verification
+        name: Custom Verification
+        entry: uv run --no-sync python scripts/commit.py
+        language: unsupported
+        stages: [commit-msg]

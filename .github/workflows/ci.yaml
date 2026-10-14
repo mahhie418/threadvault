@@ -1,0 +1,23 @@
+name: CI.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.3.0
+      - name: uv (sync)
+        run: uv sync --locked
+      - name: pre-commit (run)
+        run: uv run --no-sync pre-commit run --all-files
+      - name: pytest
+        run: uv run --no-sync pytest

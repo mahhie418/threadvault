@@ -1,0 +1,53 @@
+[
+  {
+    "last_read": "1791072000.000000",
+    "latest_reply": "1791072000.000000",
+    "reply_count": 1,
+    "reply_users": [
+      "UXXX1"
+    ],
+    "reply_users_count": 1,
+    "subscribed": true,
+    "team": "TXXX",
+    "text": "xxx",
+    "thread_ts": "1510963199.000000",
+    "ts": "1510963199.000000",
+    "type": "message",
+    "user": "UXXX2"
+  },
+  {
+    "parent_user_id": "UXXX2",
+    "team": "TXXX",
+    "text": "xxx",
+    "thread_ts": "1510963199.000000",
+    "ts": "1791072000.000000",
+    "type": "message",
+    "user": "UXXX1"
+  },
+  {
+    "edited": {
+      "ts": "1510880460.000000",
+      "user": "UXXX2"
+    },
+    "team": "TXXX",
+    "text": "xxx",
+    "ts": "1510880400.000000",
+    "type": "message",
+    "user": "UXXX2"
+  },
+  {
+    "bot_id": "BXXX",
+    "subtype": "bot_message",
+    "text": "xxx",
+    "ts": "1791075600.000000",
+    "type": "message",
+    "username": "xxx"
+  },
+  {
+    "team": "TXXX",
+    "text": "xxx",
+    "ts": "1791075600.000001",
+    "type": "message",
+    "user": "UXXX3"
+  }
+]

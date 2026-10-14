@@ -1,0 +1,742 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
+import collections.abc
+import dataclasses
+import datetime
+import json
+import os
+import pathlib
+import typing
+import unittest.mock
+import weakref
+
+import httpx
+import pytest
+import respx
+import slack_sdk
+import slack_sdk.errors
+
+import threadvault.backup.backlog
+import threadvault.backup.runner
+import threadvault.customisation
+import threadvault.github.rest
+import threadvault.slack.api
+import threadvault.vault.merge
+import threadvault.vault.repository
+import threadvault.vault.state
+
+NOW = datetime.datetime(2026, 10, 5, 1, 0, tzinfo = datetime.UTC)
+
+SETTINGS = threadvault.customisation.Settings(workspace_timezone = 'Asia/Tokyo', markdown_language = 'ja')
+REPOSITORY = f'{threadvault.github.rest.API_URL}/repos/xxx/xxx'
+
+MESSAGES_DELETION = {'1510880400.000000', '1791075600.000001'}
+
+MODES_TRAVERSAL = ['relative', 'absolute']
+TARGETS_SYMLINK = ['external', 'internal', 'missing']
+
+RENAMES_INTERRUPTED = ['fetch', *range(8)]
+DELETIONS_LIMITED = [(0, [(0, 1), (0, 1)]), (1, [(0, 1), (0, 1)]), (2, [(1, 0), (1, 0)]), (None, [(1, 0), (1, 0)])]
+
+THREADS_REFETCHED = [(None, 'xxx2'), (30, 'xxx')]
+RUNS_MEMORY = [(None, None), (30, None), (30, 0), (30, 1)]
+
+THREAD_INSERTION = [
+    {'latest_reply': '1791160200.000000', 'reply_count': 1, 'text': 'xxx', 'thread_ts': '1791158400.000000', 'ts': '1791158400.000000', 'type': 'message', 'user': 'UXXX1'},
+    {'parent_user_id': 'UXXX1', 'text': 'xxx', 'thread_ts': '1791158400.000000', 'ts': '1791160200.000000', 'type': 'message', 'user': 'UXXX2'}
+]
+
+CHANNELS_JOINED = [
+    (threadvault.customisation.Settings(), {'CXXX1': {'is_member': False}}, ['CXXX1'], ['CXXX2', 'CXXX1']),
+    (threadvault.customisation.Settings(channels_joined = False), {'CXXX1': {'is_member': False}}, [], ['CXXX2']),
+    (threadvault.customisation.Settings(channel_mode = 'selected', channels_selected = ('CXXX1',)), {'CXXX1': {'is_member': False}}, ['CXXX1'], ['CXXX1']),
+    (threadvault.customisation.Settings(channel_mode = 'selected', channels_selected = ('CXXX2',)), {'CXXX1': {'is_member': False}}, [], ['CXXX2']),
+    (threadvault.customisation.Settings(), {'CXXX1': {'is_member': False, 'is_archived': True}}, [], ['CXXX2']),
+    (threadvault.customisation.Settings(), {'CXXX2': {'is_member': False}}, [], ['CXXX1'])
+]
+
+REPLY_THREAD = {'parent_user_id': 'UXXX1', 'text': 'xxx', 'thread_ts': '1510963199.000000', 'ts': '1791158400.000000', 'type': 'message', 'user': 'UXXX2'}
+MESSAGE_DAY = {'text': 'xxx', 'ts': '1787184000.000000', 'type': 'message', 'user': 'UXXX1'}
+
+BACKLOG_THREAD = threadvault.backup.backlog.Backlog(threads = {'CXXX1': frozenset({'1510963199.000000', '1791158400.000001'})})
+BACKLOG_DAY = threadvault.backup.backlog.Backlog(days = {'CXXX1': frozenset({datetime.date(2017, 11, 17), datetime.date(2026, 8, 20)})})
+
+ATTACHMENT_CONTENT = [
+    {'created': 1791158400, 'id': 'FXXX1', 'mimetype': 'text/plain', 'mode': 'hosted', 'name': 'xxx.txt', 'permalink': 'https://xxx.slack.com/files/UXXX1/FXXX1/xxx.txt', 'size': 3, 'url_private_download': 'https://files.slack.com/xxx1'},
+    {'created': 1791158400, 'id': 'FXXX2', 'mimetype': 'text/plain', 'mode': 'hosted', 'name': 'xxx.txt', 'permalink': 'https://xxx.slack.com/files/UXXX1/FXXX2/xxx.txt', 'size': 3, 'url_private_download': 'https://files.slack.com/xxx2'},
+    {'created': 1791158400, 'id': 'FXXX3', 'mimetype': 'text/plain', 'mode': 'hosted', 'name': 'xxx.txt', 'permalink': 'https://xxx.slack.com/files/UXXX1/FXXX3/xxx.txt', 'size': 1024 * 1024 * 21, 'url_private_download': 'https://files.slack.com/xxx3'}
+]
+
+ATTACHMENT_LINK = [
+    '- [xxx.txt](../../attachments/2026-10/FXXX1/xxx.txt)',
+    '- [xxx.txt](https://xxx.slack.com/files/UXXX1/FXXX2/xxx.txt)',
+    '- [xxx.txt](https://xxx.slack.com/files/UXXX1/FXXX3/xxx.txt)'
+]
+
+FILES_EXPECTED = [
+    '.threadvault/state.json',
+    'raw/channels.json',
+    'raw/groups.json',
+    'raw/users.json',
+    'raw/xxx/2017-11-17.json',
+    'raw/xxx/2026-10-04.json',
+    'transcripts/index.md',
+    'transcripts/xxx/2017-11.md',
+    'transcripts/xxx/2026-10.md'
+]
+
+FILES_PUBLISHED = [
+    '.gitattributes',
+    '.threadvault/state.json',
+    'README.md',
+    'raw/channels.json',
+    'raw/general/2017-11-17.json',
+    'raw/general/2026-10-04.json',
+    'raw/groups.json',
+    'raw/users.json',
+    'transcripts/general/2017-11.md',
+    'transcripts/general/2026-10.md',
+    'transcripts/index.md'
+]
+
+class OutcomeTracked(threadvault.vault.merge.Outcome):
+
+    pass
+
+def locate(
+    *names: str
+) -> pathlib.Path:
+
+    return pathlib.Path(os.path.join(pathlib.Path(__file__).parents[1], 'fixtures', *names))
+
+def run(
+    slack: slack_sdk.web.WebClient,
+    vault: pathlib.Path,
+    settings: threadvault.customisation.Settings = SETTINGS,
+    limit: int | None = None,
+    backlog: threadvault.backup.backlog.Backlog | None = None
+) -> list[threadvault.backup.runner.Result]:
+
+    return threadvault.backup.runner.run(slack, vault, settings, days = 30, limit = limit, now = NOW, backlog = backlog)
+
+def publish(
+    slack: slack_sdk.web.WebClient,
+    directory: pathlib.Path,
+    backlog: threadvault.backup.backlog.Backlog | None = None
+) -> tuple[list[threadvault.backup.runner.Result], str]:
+
+    return threadvault.backup.runner.publish(slack, SETTINGS, directory = directory, full_name = 'xxx/xxx', token = lambda: 'ghu_xxx', days = 30, limit = None, now = NOW, backlog = backlog)
+
+def survey(
+    root: pathlib.Path
+) -> list[str]:
+
+    return sorted(path.relative_to(root).as_posix() for path in root.rglob('*') if path.is_file())
+
+def read(
+    vault: pathlib.Path,
+    *names: str
+) -> list[dict[str, typing.Any]]:
+
+    return json.loads(pathlib.Path(os.path.join(vault, 'raw', *names)).read_text(encoding = 'utf-8'))
+
+def test_runner_vault_creation(
+    tmp_path: pathlib.Path,
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    results = run(slack, tmp_path)
+    expected = survey(locate('vault'))
+
+    assert survey(tmp_path) == sorted([*expected, '.threadvault/state.json'])
+    for name in expected: assert pathlib.Path(os.path.join(tmp_path, name)).read_bytes() == pathlib.Path(os.path.join(locate('vault'), name)).read_bytes()
+    assert threadvault.vault.state.load(tmp_path) == {'CXXX1': 'general', 'CXXX2': 'xxx'}
+    assert [result.messages for result in results] == [0, 5]
+
+def test_runner_vault_update(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    run(slack, tmp_path)
+
+    messages: list[dict[str, typing.Any]] = workspace['messages']['CXXX1']
+    next(message for message in messages if message['ts'] == '1791075600.000000')['text'] = 'xxx2'
+    workspace['messages']['CXXX1'] = [message for message in messages if message['ts'] not in MESSAGES_DELETION] + THREAD_INSERTION
+
+    results = run(slack, tmp_path)
+    transcript = pathlib.Path(os.path.join(tmp_path, 'transcripts', 'general', '2026-10.md')).read_text(encoding = 'utf-8')
+
+    assert [message['ts'] for message in read(tmp_path, 'general', '2017-11-17.json')] == ['1510880400.000000', '1510963199.000000']
+    assert [(message['ts'], message['text']) for message in read(tmp_path, 'general', '2026-10-04.json')] == [('1791072000.000000', 'xxx'), ('1791075600.000000', 'xxx2')]
+    assert [message['ts'] for message in read(tmp_path, 'general', '2026-10-05.json')] == ['1791158400.000000', '1791160200.000000']
+    assert results[1] == threadvault.backup.runner.Result(channel = 'CXXX1', directory = 'general', messages = 6, deleted = 1, withheld = 0, files = 0, failures = 0)
+    assert 'xxx2' in transcript
+    assert 'p1791075600000001' not in transcript
+
+@pytest.mark.parametrize(('limit', 'expected'), DELETIONS_LIMITED)
+def test_runner_vault_deletion(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient,
+    limit: int | None,
+    expected: list[tuple[int, int]]
+) -> None:
+
+    workspace['messages']['CXXX2'] = [{'text': 'xxx', 'ts': '1791075600.000000', 'type': 'message', 'user': 'UXXX1'}]
+
+    run(slack, tmp_path)
+
+    workspace['messages'] = {'CXXX1': [message for message in workspace['messages']['CXXX1'] if message['ts'] not in MESSAGES_DELETION], 'CXXX2': []}
+
+    results = run(slack, tmp_path, limit = limit)
+
+    assert [(result.deleted, result.withheld) for result in results] == expected
+    assert ('1791075600.000001' in {message['ts'] for message in read(tmp_path, 'general', '2026-10-04.json')}) == bool(expected[1][1])
+
+def test_runner_vault_state(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    run(slack, tmp_path)
+
+    pathlib.Path(os.path.join(tmp_path, '.threadvault', 'state.json')).unlink()
+    workspace['messages']['CXXX1'] = [message for message in workspace['messages']['CXXX1'] if message['ts'] not in MESSAGES_DELETION]
+
+    results = run(slack, tmp_path)
+
+    assert results[1] == threadvault.backup.runner.Result(channel = 'CXXX1', directory = 'general', messages = 5, deleted = 0, withheld = 1, files = 0, failures = 0)
+
+def test_runner_vault_rename(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    run(slack, tmp_path)
+
+    for channel in workspace['channels']: channel['name'] = {'CXXX1': 'xxx', 'CXXX2': 'general'}[channel['id']]
+
+    run(slack, tmp_path)
+
+    assert survey(tmp_path) == FILES_EXPECTED
+    assert threadvault.vault.state.load(tmp_path) == {'CXXX1': 'xxx', 'CXXX2': 'general'}
+
+@pytest.mark.parametrize('stage', RENAMES_INTERRUPTED)
+def test_runner_vault_recovery(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient,
+    stage: str | int
+) -> None:
+
+    workspace['messages']['CXXX2'] = [{'text': 'xxx', 'ts': '1510880401.000000', 'type': 'message', 'user': 'UXXX1'}]
+    expected = {channel: {message['ts'] for message in messages} for channel, messages in workspace['messages'].items()}
+    run(slack, tmp_path)
+
+    for channel in workspace['channels']: channel['name'] = {'CXXX1': 'xxx', 'CXXX2': 'general'}[channel['id']]
+
+    rename = pathlib.Path.rename
+    count = 0
+
+    def interrupt(
+        source: pathlib.Path,
+        target: pathlib.Path
+    ) -> pathlib.Path:
+
+        nonlocal count
+
+        if count == stage: raise ConnectionError('xxx')
+
+        count += 1
+
+        return rename(source, target)
+
+    with monkeypatch.context() as patches:
+
+        if stage == 'fetch': patches.setattr(threadvault.slack.api, 'history', unittest.mock.Mock(side_effect = ConnectionError('xxx')))
+        else: patches.setattr(pathlib.Path, 'rename', interrupt)
+
+        with pytest.raises(ConnectionError): run(slack, tmp_path)
+
+    run(slack, tmp_path)
+
+    for channel, directory in {'CXXX1': 'xxx', 'CXXX2': 'general'}.items():
+
+        messages = [message for file in pathlib.Path(os.path.join(tmp_path, 'raw', directory)).glob('*.json') for message in json.loads(file.read_text(encoding = 'utf-8'))]
+
+        assert {message['ts'] for message in messages} == expected[channel]
+
+    assert [file.name for file in pathlib.Path(os.path.join(tmp_path, '.threadvault')).iterdir()] == ['state.json']
+
+def test_runner_vault_addition(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    channel = next(channel for channel in workspace['channels'] if channel['id'] == 'CXXX1')
+    channel['is_member'] = False
+
+    assert [result.channel for result in run(slack, tmp_path, dataclasses.replace(SETTINGS, channels_joined = False))] == ['CXXX2']
+
+    channel['is_member'] = True
+
+    results = run(slack, tmp_path)
+
+    assert results[1] == threadvault.backup.runner.Result(channel = 'CXXX1', directory = 'general', messages = 5, deleted = 0, withheld = 0, files = 0, failures = 0)
+
+def test_runner_vault_selection(
+    tmp_path: pathlib.Path,
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    results = run(slack, tmp_path, dataclasses.replace(SETTINGS, channel_mode = 'selected', channels_selected = ('CXXX2',)))
+
+    assert [result.channel for result in results] == ['CXXX2']
+    assert [channel['id'] for channel in read(tmp_path, 'groups.json')] == ['CXXX2']
+    assert read(tmp_path, 'channels.json') == []
+    assert threadvault.vault.state.load(tmp_path) == {'CXXX2': 'xxx'}
+
+@pytest.mark.parametrize(('settings', 'changes', 'joined', 'channels'), CHANNELS_JOINED)
+def test_runner_vault_joining(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient,
+    settings: threadvault.customisation.Settings,
+    changes: dict[str, dict[str, bool]],
+    joined: list[str],
+    channels: list[str]
+) -> None:
+
+    for channel in workspace['channels']: channel.update(changes.get(channel['id'], {}))
+
+    results = run(slack, tmp_path, settings)
+
+    assert [arguments['channel'] for name, arguments in workspace['calls'] if name == 'conversations.join'] == joined
+    assert [result.channel for result in results] == channels
+
+def test_runner_vault_rejection(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    next(channel for channel in workspace['channels'] if channel['id'] == 'CXXX1')['is_member'] = False
+    monkeypatch.setattr(threadvault.slack.api, 'join', unittest.mock.Mock(side_effect = slack_sdk.errors.SlackApiError('xxx', {'ok': False, 'error': 'xxx'})))
+
+    assert [result.channel for result in run(slack, tmp_path)] == ['CXXX2']
+    assert 'Channel CXXX1 not joined: xxx' in caplog.text
+
+def test_runner_vault_backlog(
+    tmp_path: pathlib.Path,
+    remote: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    directory = pathlib.Path(os.path.join(tmp_path, 'clone'))
+
+    with respx.mock:
+
+        respx.get(REPOSITORY).respond(200, json = {'clone_url': str(remote), 'full_name': 'xxx/xxx', 'private': True})
+        respx.get(f'{threadvault.github.rest.API_URL}/user').respond(200, json = {'id': 1, 'login': 'xxx'})
+
+        publish(slack, directory)
+
+        workspace['messages']['CXXX1'] += [REPLY_THREAD]
+
+        publish(slack, directory)
+
+        assert not pathlib.Path(os.path.join(directory, 'raw', 'general', '2026-10-05.json')).exists()
+
+        results, _ = publish(slack, directory, BACKLOG_THREAD)
+
+    assert [message['ts'] for message in read(directory, 'general', '2026-10-05.json')] == ['1791158400.000000']
+    assert results[1].messages == 6
+
+def test_runner_vault_revision(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    workspace['messages']['CXXX1'] += [MESSAGE_DAY]
+
+    run(slack, tmp_path)
+
+    messages = workspace['messages']['CXXX1']
+    next(message for message in messages if message['ts'] == '1510880400.000000')['text'] = 'xxx2'
+    workspace['messages']['CXXX1'] = [message for message in messages if message['ts'] != MESSAGE_DAY['ts']]
+
+    run(slack, tmp_path)
+
+    assert [(message['ts'], message['text']) for message in read(tmp_path, 'general', '2017-11-17.json')] == [('1510880400.000000', 'xxx'), ('1510963199.000000', 'xxx')]
+    assert [message['ts'] for message in read(tmp_path, 'general', '2026-08-20.json')] == [MESSAGE_DAY['ts']]
+
+    results = run(slack, tmp_path, backlog = BACKLOG_DAY)
+
+    assert [(message['ts'], message['text']) for message in read(tmp_path, 'general', '2017-11-17.json')] == [('1510880400.000000', 'xxx2'), ('1510963199.000000', 'xxx')]
+    assert not pathlib.Path(os.path.join(tmp_path, 'raw', 'general', '2026-08-20.json')).exists()
+    assert (results[1].messages, results[1].deleted) == (5, 1)
+
+def test_runner_vault_attachment(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    workspace['messages']['CXXX1'] += [{'files': ATTACHMENT_CONTENT, 'text': '', 'ts': '1791158400.000000', 'type': 'message', 'user': 'UXXX1'}]
+    transcript = pathlib.Path(os.path.join(tmp_path, 'transcripts', 'general', '2026-10.md'))
+
+    with respx.mock: results = run(slack, tmp_path, dataclasses.replace(SETTINGS, attachments_enabled = False))
+
+    assert (results[1].files, results[1].failures) == (0, 0)
+    assert transcript.read_text(encoding = 'utf-8').splitlines()[-3:] == [f'- [xxx.txt]({file['permalink']})' for file in ATTACHMENT_CONTENT]
+
+    with respx.mock:
+
+        respx.get('https://files.slack.com/xxx1').respond(200, content = b'xxx', headers = {'content-type': 'text/plain'})
+        respx.get('https://files.slack.com/xxx2').respond(200, content = b'xxx', headers = {'content-type': 'text/html'})
+        results = run(slack, tmp_path)
+
+    assert (results[1].files, results[1].failures) == (1, 1)
+    assert survey(pathlib.Path(os.path.join(tmp_path, 'attachments'))) == ['2026-10/FXXX1/xxx.txt']
+    assert transcript.read_text(encoding = 'utf-8').splitlines()[-3:] == ATTACHMENT_LINK
+
+    with respx.mock:
+
+        respx.get('https://files.slack.com/xxx2').respond(200, content = b'xxx', headers = {'content-type': 'text/html'})
+        results = run(slack, tmp_path)
+
+    assert (results[1].files, results[1].failures) == (0, 1)
+
+def test_runner_vault_interruption(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    history = threadvault.slack.api.history
+
+    def interrupt(
+        client: slack_sdk.web.WebClient,
+        channel: str,
+        *,
+        oldest: str,
+        latest: str
+    ) -> list[dict[str, typing.Any]]:
+
+        if channel == 'CXXX1': raise ConnectionError
+
+        return history(client, channel, oldest = oldest, latest = latest)
+
+    monkeypatch.setattr(threadvault.slack.api, 'history', interrupt)
+
+    with pytest.raises(ConnectionError): run(slack, tmp_path)
+
+    assert threadvault.vault.state.load(tmp_path) == {'CXXX2': 'xxx'}
+
+def test_runner_vault_checkpoint(
+    tmp_path: pathlib.Path,
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    states = []
+
+    for _ in range(2): threadvault.backup.runner.run(slack, tmp_path, SETTINGS, days = 30, limit = None, now = NOW, checkpoint = lambda _: states.append(threadvault.vault.state.load(tmp_path)))
+
+    assert states == [{'CXXX2': 'xxx'}, {'CXXX1': 'general', 'CXXX2': 'xxx'}]
+
+@pytest.mark.parametrize(('days', 'limit'), RUNS_MEMORY)
+def test_runner_vault_memory(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient,
+    days: int | None,
+    limit: int | None
+) -> None:
+
+    workspace['messages']['CXXX2'] = [{'text': 'xxx', 'ts': '1791075600.000000', 'type': 'message', 'user': 'UXXX1'}]
+
+    run(slack, tmp_path)
+
+    history = threadvault.slack.api.history
+    references = []
+
+    def track(
+        *,
+        messages: list[dict[str, typing.Any]],
+        deleted: list[dict[str, typing.Any]],
+        withheld: list[dict[str, typing.Any]]
+    ) -> threadvault.vault.merge.Outcome:
+
+        assert all(reference() is None for reference in references)
+
+        tracked = OutcomeTracked(messages = messages, deleted = deleted, withheld = withheld)
+        references.append(weakref.ref(tracked))
+
+        return tracked
+
+    def retrieve(
+        client: slack_sdk.web.WebClient,
+        channel: str,
+        *,
+        oldest: str,
+        latest: str
+    ) -> list[dict[str, typing.Any]]:
+
+        assert all(reference() is None for reference in references)
+
+        return history(client, channel, oldest = oldest, latest = latest)
+
+    monkeypatch.setattr(threadvault.vault.merge, 'Outcome', track)
+    monkeypatch.setattr(threadvault.slack.api, 'history', retrieve)
+
+    results = threadvault.backup.runner.run(slack, tmp_path, SETTINGS, days = days, limit = limit, now = NOW)
+
+    assert [result.messages for result in results] == [1, 5]
+    assert all(reference() is None for reference in references)
+
+def test_runner_vault_resynchronisation(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    directories = []
+
+    run(slack, tmp_path)
+
+    workspace['messages']['CXXX1'] = [message for message in workspace['messages']['CXXX1'] if message['ts'] not in MESSAGES_DELETION]
+
+    results = threadvault.backup.runner.run(slack, tmp_path, SETTINGS, days = None, limit = None, now = NOW, checkpoint = lambda result: directories.append(result.directory))
+
+    assert directories == ['xxx', 'general']
+    assert [(result.messages, result.deleted, result.withheld) for result in results] == [(0, 0, 0), (5, 0, 1)]
+
+@pytest.mark.parametrize(('days', 'text'), THREADS_REFETCHED)
+def test_runner_vault_reply(
+    tmp_path: pathlib.Path,
+    workspace: dict[str, typing.Any],
+    slack: slack_sdk.web.WebClient,
+    days: int | None,
+    text: str
+) -> None:
+
+    run(slack, tmp_path)
+    next(message for message in workspace['messages']['CXXX1'] if message['ts'] == '1791072000.000000')['text'] = 'xxx2'
+
+    threadvault.backup.runner.run(slack, tmp_path, SETTINGS, days = days, limit = None, now = NOW)
+
+    assert next(message for message in read(tmp_path, 'general', '2026-10-04.json') if message['ts'] == '1791072000.000000')['text'] == text
+
+def test_runner_vault_publication(
+    tmp_path: pathlib.Path,
+    remote: pathlib.Path,
+    git: collections.abc.Callable[..., str],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    directory = pathlib.Path(os.path.join(tmp_path, 'clone'))
+    found = httpx.Response(200, json = {'clone_url': str(remote), 'full_name': 'xxx/xxx', 'private': True})
+
+    with respx.mock:
+
+        respx.get(REPOSITORY).mock(side_effect = [httpx.Response(404, json = {'message': 'Not Found'}), *[found] * 9])
+        creation = respx.post(f'{threadvault.github.rest.API_URL}/user/repos').respond(201, json = {'clone_url': str(remote), 'full_name': 'xxx/xxx', 'private': True})
+        respx.get(f'{threadvault.github.rest.API_URL}/user').respond(200, json = {'id': 1, 'login': 'xxx'})
+
+        results, commit = publish(slack, directory)
+        log = git('log', '--format=%s %ae', 'main', directory = remote).splitlines()
+
+        publish(slack, directory)
+
+    assert creation.call_count == 1
+    assert [result.messages for result in results] == [0, 5]
+    assert commit == git('rev-parse', 'main', directory = remote).strip()
+    assert log == ['Back up at 2026-10-05 01:00 UTC 1+xxx@users.noreply.github.com', 'Back up #general 1+xxx@users.noreply.github.com', 'Back up #xxx 1+xxx@users.noreply.github.com', 'xxx xxx@xxx.xxx']
+    assert git('log', '--format=%s', 'main', directory = remote).splitlines() == [line.rpartition(' ')[0] for line in log]
+    assert git('ls-tree', '-r', '--name-only', 'main', directory = remote).splitlines() == FILES_PUBLISHED
+    assert git('show', 'main:README.md', directory = remote).splitlines()[0] == '# Slack のバックアップ'
+
+def test_runner_vault_privacy(
+    tmp_path: pathlib.Path,
+    remote: pathlib.Path,
+    git: collections.abc.Callable[..., str],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    directory = pathlib.Path(os.path.join(tmp_path, 'clone'))
+
+    with respx.mock:
+
+        respx.get(REPOSITORY).respond(200, json = {'clone_url': str(remote), 'full_name': 'xxx/xxx', 'private': False})
+
+        with pytest.raises(threadvault.backup.runner.VaultError, match = 'is public'): publish(slack, directory)
+
+    assert not directory.exists()
+    assert git('log', '--format=%s', 'main', directory = remote).splitlines() == ['xxx']
+
+def test_runner_vault_exposure(
+    tmp_path: pathlib.Path,
+    remote: pathlib.Path,
+    git: collections.abc.Callable[..., str],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    directory = pathlib.Path(os.path.join(tmp_path, 'clone'))
+    responses = [httpx.Response(200, json = {'clone_url': str(remote), 'full_name': 'xxx/xxx', 'private': private}) for private in (True, False)]
+
+    with respx.mock:
+
+        respx.get(REPOSITORY).mock(side_effect = responses)
+        respx.get(f'{threadvault.github.rest.API_URL}/user').respond(200, json = {'id': 1, 'login': 'xxx'})
+
+        with pytest.raises(threadvault.backup.runner.VaultError, match = 'no longer a private repository'): publish(slack, directory)
+
+    assert git('log', '--format=%s', 'main', directory = remote).splitlines() == ['xxx']
+
+def test_runner_vault_lock(
+    tmp_path: pathlib.Path,
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    directory = pathlib.Path(os.path.join(tmp_path, 'clone'))
+
+    with threadvault.backup.runner.hold(directory), pytest.raises(threadvault.backup.runner.LockError, match = 'already writing'): publish(slack, directory)
+    with threadvault.backup.runner.hold(directory), pytest.raises(threadvault.backup.runner.LockError, match = 'already writing'), threadvault.backup.runner.hold(directory): pass
+    with threadvault.backup.runner.hold(directory), threadvault.backup.runner.hold(pathlib.Path(os.path.join(tmp_path, 'xxx'))): pass
+
+    assert not directory.exists()
+
+def test_runner_vault_git(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    directory = pathlib.Path(os.path.join(tmp_path, 'clone'))
+    monkeypatch.setattr(threadvault.vault.repository, 'VERSION_MINIMUM', (999, 0))
+
+    with respx.mock, pytest.raises(threadvault.vault.repository.GitError, match = 'or newer is needed'): publish(slack, directory)
+
+    assert not directory.exists()
+
+@pytest.mark.parametrize('mode', MODES_TRAVERSAL)
+def test_runner_safety_path(
+    tmp_path: pathlib.Path,
+    slack: slack_sdk.web.WebClient,
+    mode: str
+) -> None:
+
+    vault = pathlib.Path(os.path.join(tmp_path, 'vault'))
+    vault.mkdir()
+
+    external = pathlib.Path(os.path.join(tmp_path, 'xxx'))
+    external.mkdir()
+
+    file = pathlib.Path(os.path.join(external, 'xxx.txt'))
+    file.write_text('xxx', encoding = 'utf-8')
+
+    pathlib.Path(os.path.join(vault, 'raw')).mkdir()
+    threadvault.vault.state.save(vault, {'CXXX1': str(external) if mode == 'absolute' else '../../xxx'})
+
+    with pytest.raises(threadvault.vault.state.StateError): run(slack, vault)
+
+    assert file.read_text(encoding = 'utf-8') == 'xxx'
+
+def test_runner_safety_symlink(
+    tmp_path: pathlib.Path,
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    vault = pathlib.Path(os.path.join(tmp_path, 'vault'))
+
+    raw = pathlib.Path(os.path.join(vault, 'raw'))
+    raw.mkdir(parents = True)
+
+    external = pathlib.Path(os.path.join(tmp_path, 'xxx'))
+    external.mkdir()
+
+    link = pathlib.Path(os.path.join(raw, 'xxx'))
+
+    try: link.symlink_to(external, target_is_directory = True)
+    except OSError: pytest.skip('Creating symlinks is not allowed')
+
+    threadvault.vault.state.save(vault, {'CXXX1': 'xxx'})
+
+    with pytest.raises(threadvault.vault.state.StateError): run(slack, vault)
+
+    assert link.is_symlink()
+    assert list(external.iterdir()) == []
+
+@pytest.mark.parametrize('target', TARGETS_SYMLINK)
+def test_runner_safety_message(
+    tmp_path: pathlib.Path,
+    slack: slack_sdk.web.WebClient,
+    target: str
+) -> None:
+
+    vault = pathlib.Path(os.path.join(tmp_path, 'vault'))
+
+    run(slack, vault)
+
+    directory = pathlib.Path(os.path.join(vault, 'raw', 'general'))
+    file = pathlib.Path(os.path.join(directory if target == 'internal' else tmp_path, 'xxx.json'))
+    text = json.dumps([{'text': 'xxx', 'ts': '1510880401.000000', 'type': 'message', 'user': 'UXXX1'}])
+
+    if target != 'missing': file.write_text(text, encoding = 'utf-8')
+
+    link = pathlib.Path(os.path.join(directory, '2017-11-17.json'))
+    link.unlink()
+
+    try: link.symlink_to(file)
+    except OSError: pytest.skip('Creating symlinks is not allowed')
+
+    with pytest.raises(threadvault.vault.state.StateError, match = 'regular message file'): run(slack, vault)
+
+    assert link.is_symlink()
+
+    if target != 'missing': assert file.read_text(encoding = 'utf-8') == text
+
+def test_runner_safety_publication(
+    tmp_path: pathlib.Path,
+    remote: pathlib.Path,
+    git: collections.abc.Callable[..., str],
+    slack: slack_sdk.web.WebClient
+) -> None:
+
+    file = pathlib.Path(os.path.join(tmp_path, 'xxx.json'))
+    text = json.dumps([{'text': 'xxx', 'ts': '1510880401.000000', 'type': 'message', 'user': 'UXXX1'}])
+    file.write_text(text, encoding = 'utf-8')
+    seed = threadvault.vault.repository.Repository(pathlib.Path(os.path.join(tmp_path, 'xxx')), token = None, name = 'xxx', email = 'xxx@xxx.xxx')
+    seed.clone(str(remote))
+    directory = pathlib.Path(os.path.join(seed.path, 'raw', 'general'))
+    directory.mkdir(parents = True)
+    link = pathlib.Path(os.path.join(directory, '2017-11-17.json'))
+
+    try: link.symlink_to('../../../xxx.json')
+    except OSError: pytest.skip('Creating symlinks is not allowed')
+
+    threadvault.vault.state.save(seed.path, {'CXXX1': 'general'})
+    seed.commit('xxx')
+    seed.push()
+
+    with respx.mock:
+
+        respx.get(REPOSITORY).respond(200, json = {'clone_url': str(remote), 'full_name': 'xxx/xxx', 'private': True})
+        respx.get(f'{threadvault.github.rest.API_URL}/user').respond(200, json = {'id': 1, 'login': 'xxx'})
+
+        with pytest.raises(threadvault.vault.state.StateError, match = 'regular message file'): publish(slack, pathlib.Path(os.path.join(tmp_path, 'clone')))
+
+    assert git('show', 'main:raw/general/2017-11-17.json', directory = remote) == '../../../xxx.json'
+    assert file.read_text(encoding = 'utf-8') == text

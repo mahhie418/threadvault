@@ -1,0 +1,24 @@
+[
+  {
+    "created": 1000000000,
+    "creator": "UXXX2",
+    "id": "CXXX1",
+    "is_archived": false,
+    "is_general": true,
+    "members": [
+      "UXXX1",
+      "UXXX2"
+    ],
+    "name": "general",
+    "purpose": {
+      "creator": "UXXX2",
+      "last_set": 1500000000,
+      "value": "xxx"
+    },
+    "topic": {
+      "creator": "",
+      "last_set": 0,
+      "value": ""
+    }
+  }
+]
