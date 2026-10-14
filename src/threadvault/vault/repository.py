@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Git commands on the clone of the vault, apart from the git settings of the machine."""
 
 import base64
@@ -125,7 +128,7 @@ class Repository:
             GitError: git failed.
         """
 
-        self._git('add', '--all')
+        self._git('add', '--all', '--force')
 
         if not self._git('status', '--porcelain'): return False
 

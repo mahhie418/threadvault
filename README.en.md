@@ -1,6 +1,6 @@
 # ThreadVault
 
-[日本語](README.ja.md)
+[日本語](https://github.com/mahhie418/threadvault/blob/main/README.ja.md)
 
 ThreadVault backs up a Slack workspace to a private GitHub repository, called the vault. The vault keeps the workspace in the JSON format of Slack's export, and as Markdown transcripts that people and AI services can read.
 
@@ -39,26 +39,26 @@ Setup walks you through four steps and writes your answers to the settings file:
 1. **Slack app.** Open the link that setup shows to create the Slack app, whose settings are filled in from the manifest. Follow the numbered steps, then paste the Bot User OAuth Token and the App-Level Token.
 2. **GitHub App.** Answer whether the vault is to belong to a GitHub organisation, then open the link to register the GitHub App, whose settings are also filled in. Tick Enable Device Flow, create the app, install it on the account that keeps the vault, and paste the Client ID and the app slug.
 3. **Owner.** Paste the member ID of the person who owns ThreadVault in Slack. To copy it, open their profile in Slack and select ⋮ (More), then Copy member ID.
-4. **Check and autostart.** Setup checks the settings, Slack and git, then offers to start the Slack app automatically when you log in.
+4. **Check and autostart.** Setup checks the settings, Slack and git, then offers to start the Slack app automatically when you log in. If you decline, it stops an earlier registration, as `threadvault stop` does.
 
-To change an answer, run setup again. Where a question shows the current value in brackets, press Enter to keep it. [Creating the Slack app](docs/slack.md) and [Registering the GitHub App](docs/github.md) explain how to do the first two steps by hand.
+To change an answer, run setup again. A question that already has an answer shows it in brackets, or shows `[keep current]` for a token; press Enter to keep it. [Creating the Slack app](https://github.com/mahhie418/threadvault/blob/main/docs/slack.md) and [Registering the GitHub App](https://github.com/mahhie418/threadvault/blob/main/docs/github.md) explain how to do the first two steps by hand.
 
 ## Connect GitHub and choose the destination
 
 With the Slack app running, open ThreadVault in Slack and go to its Home tab:
 
 1. Select **Connect GitHub**, open the page that it shows and enter the code.
-2. Select **Choose destination** and then a private repository that the GitHub App can access, or select **Create repository** to create a private one.
-3. Select **Settings** to set the time of the daily backup, the channels to back up, the attached files and the language of the Markdown.
-4. Select **Back up now**, or wait for the daily backup.
+2. Select **Choose destination** and then a private repository that the GitHub App can access, or select **Create new repository** in the same window to create a private one.
+3. Select **Change settings** to set the time of the daily backup, the channels to back up, the attached files and the language of the Markdown.
+4. Select **Back up now** and then **Start**, or wait for the daily backup.
 
-**Resynchronise everything** fetches every channel again from the start. It deletes nothing from the vault.
+Selecting **Whole history again** in **Back up now** fetches every channel again from the start. It deletes nothing from the vault.
 
 ## Owner and admins
 
 - The owner can do everything, including allowing admins to operate the app with **Admin permissions** and handing the ownership to an admin with **Transfer ownership**. Setup writes the first owner to `THREADVAULT_OWNER_ID`.
-- Admins see the destination. Once the owner allows them, they can also connect GitHub, choose the destination, change the settings and start backups.
-- Everyone else sees only the status of the backups.
+- Admins allowed by the owner see the connection to GitHub and the destination. They can also connect GitHub, choose the destination, change the settings and start backups.
+- Everyone else, including the other admins, sees only the status of the backups.
 
 Setup does not ask for admins. To add them, write their member IDs to `THREADVAULT_ADMIN_IDS` in the settings file, separated by commas, then restart the Slack app:
 
@@ -66,7 +66,7 @@ Setup does not ask for admins. To add them, write their member IDs to `THREADVAU
 THREADVAULT_ADMIN_IDS=U0123ABCDE,U0456FGHIJ
 ```
 
-The owner and the admins get a direct message when GitHub is connected or disconnected, when the destination changes and when a backup fails.
+The owner and the admins allowed by the owner get a direct message when GitHub is connected or disconnected, when the destination changes and when a backup fails.
 
 ## Settings
 
@@ -100,6 +100,7 @@ Restart the Slack app after you change the settings file.
 |---|---|
 | `threadvault setup` | Creates the Slack app, registers the GitHub App, chooses the owner and starts the Slack app at login, writing the settings file |
 | `threadvault start` | Runs the Slack app until it is stopped. `--log FILE` appends the output to a file. |
+| `threadvault stop` | Stops the Slack app and stops it from starting at login |
 | `threadvault doctor` | Checks the settings, Slack, git, GitHub and the destination |
 | `threadvault connect` | Connects GitHub from the terminal, as **Connect GitHub** does in App Home |
 | `threadvault backup --out DIR` | Backs up the workspace once into a local folder |
@@ -121,10 +122,13 @@ To restart the Slack app, for example after changing the settings file:
 - Windows: `schtasks /End /TN threadvault`, then `schtasks /Run /TN threadvault`
 - Without autostart: stop `threadvault start` with Ctrl+C and run it again.
 
-To stop starting at login:
+To stop the Slack app and stop it from starting at login, run `threadvault stop`.
 
-- macOS: `launchctl bootout gui/$(id -u)/threadvault`, then delete `~/Library/LaunchAgents/threadvault.plist`.
-- Windows: `schtasks /Delete /TN threadvault /F`, then delete `threadvault.xml` in the data folder.
+## Update and uninstall
+
+To update ThreadVault, run `uv tool upgrade threadvault`, then restart the Slack app. When a new version changes the manifest, also update the Slack app as [Update the app](https://github.com/mahhie418/threadvault/blob/main/docs/slack.md#update-the-app) describes.
+
+To uninstall ThreadVault, stop the Slack app and its start at login as above, or stop `threadvault start` with Ctrl+C, then run `uv tool uninstall threadvault`. The settings file and the data folder stay, so delete them if you no longer need them. The Slack app, the GitHub App and the vault stay too, until you delete them in Slack and GitHub.
 
 ## The vault
 
@@ -152,3 +156,7 @@ When a message disappears from Slack, the next backup removes it from the files 
 - On the Free plan, Slack shows only the last 90 days of messages and deletes messages older than a year. The vault keeps what ThreadVault has backed up, so set it up early.
 - The settings file holds the Slack tokens, and on macOS and Linux only you can read it. The GitHub tokens are stored encrypted in the data folder.
 - ThreadVault backs up only to private repositories, and refuses public ones.
+
+## Licence
+
+ThreadVault is released under the MIT License. See [LICENSE](https://github.com/mahhie418/threadvault/blob/main/LICENSE).

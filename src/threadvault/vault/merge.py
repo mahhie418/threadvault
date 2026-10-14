@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Merging of the messages fetched from Slack into the messages of the vault."""
 
 import collections.abc

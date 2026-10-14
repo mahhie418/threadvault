@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 import builtins
 import collections.abc
 import datetime
@@ -40,6 +43,11 @@ import threadvault.vault.repository
 ENVIRONMENTS_START = [
     ({'SLACK_APP_TOKEN': 'xapp-xxx', 'THREADVAULT_OWNER_ID': 'UXXX1', 'GITHUB_APP_CLIENT_ID': 'xxx', 'GITHUB_APP_SLUG': 'xxx'}, 0, '', ['xapp-xxx']),
     ({'SLACK_APP_TOKEN': '', 'THREADVAULT_OWNER_ID': '', 'GITHUB_APP_CLIENT_ID': '', 'GITHUB_APP_SLUG': ''}, 1, '[ERROR] Missing required environment variables: SLACK_APP_TOKEN, THREADVAULT_OWNER_ID, GITHUB_APP_CLIENT_ID, GITHUB_APP_SLUG\n', [])
+]
+
+REGISTRATIONS_STOP = [
+    ('xxx', '[OK] autostart: removed xxx\n'),
+    (None, '[OK] autostart: not registered\n')
 ]
 
 NOW = datetime.datetime.now(datetime.UTC)
@@ -91,10 +99,11 @@ DESTINATIONS_SETUP = [
 ]
 
 PLATFORMS_SETUP = [
-    (frozenset({sys.platform}), [''], '[OK] autostart: xxx\n\n', 1),
-    (frozenset({sys.platform}), ['yes'], '[OK] autostart: xxx\n\n', 1),
-    (frozenset({sys.platform}), ['no'], "[NEXT] run 'threadvault start' to start the Slack app\n\n", 0),
-    (frozenset[str](), [], "[NEXT] run 'threadvault start' to start the Slack app\n\n", 0)
+    (frozenset({sys.platform}), [''], None, '[OK] autostart: xxx\n\n', 1, 0),
+    (frozenset({sys.platform}), ['yes'], None, '[OK] autostart: xxx\n\n', 1, 0),
+    (frozenset({sys.platform}), ['no'], None, "\n[NEXT] run 'threadvault start' to start the Slack app\n\n", 0, 1),
+    (frozenset({sys.platform}), ['no'], 'xxx', "\n[OK] autostart: removed xxx\n[NEXT] run 'threadvault start' to start the Slack app\n\n", 0, 1),
+    (frozenset[str](), [], None, "\n[NEXT] run 'threadvault start' to start the Slack app\n\n", 0, 0)
 ]
 
 LAYOUT_SETUP = """
@@ -169,6 +178,7 @@ def answer(
     monkeypatch.setattr(getpass, 'getpass', unittest.mock.Mock(side_effect = tokens))
     monkeypatch.setattr(builtins, 'input', unittest.mock.Mock(side_effect = [*apps, *owners, *starts]))
     monkeypatch.setattr(webbrowser, 'open', browse)
+    monkeypatch.setattr(threadvault.autostart, 'unregister', unittest.mock.Mock(return_value = None))
     monkeypatch.setattr(threadvault.github.oauth, 'request', request)
 
     return browse, request
@@ -473,6 +483,38 @@ class TestTerminalCommandStart:
         assert threadvault.terminal.main(['start', '--log', str(log)]) == 0
         assert capsys.readouterr() == ('', '')
         assert log.read_text(encoding = 'utf-8') == '[ERROR] Missing required environment variables: SLACK_APP_TOKEN\nxoxb-xxx\n'
+
+class TestTerminalCommandStop:
+
+    @pytest.mark.parametrize(('registration', 'out'), REGISTRATIONS_STOP)
+    def test_registration(
+        self,
+        tmp_path: pathlib.Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        registration: str | None,
+        out: str
+    ) -> None:
+
+        unregister = unittest.mock.Mock(return_value = registration)
+
+        monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
+        monkeypatch.setattr(threadvault.autostart, 'unregister', unregister)
+
+        assert threadvault.terminal.main(['stop']) == 0
+        assert capsys.readouterr() == (out, '')
+        assert unregister.call_args == unittest.mock.call(pathlib.Path(os.path.join(tmp_path, 'start.log')))
+
+    def test_failure(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str]
+    ) -> None:
+
+        monkeypatch.setattr(threadvault.autostart, 'unregister', unittest.mock.Mock(side_effect = threadvault.autostart.AutostartError('xxx')))
+
+        assert threadvault.terminal.main(['stop']) == 1
+        assert capsys.readouterr() == ('', '[ERROR] xxx\n')
 
 class TestTerminalCommandManifest:
 
@@ -805,7 +847,7 @@ class TestTerminalCommandSetup:
         assert out in captured.out
         assert not captured.err
 
-    @pytest.mark.parametrize(('platforms', 'starts', 'out', 'registrations'), PLATFORMS_SETUP)
+    @pytest.mark.parametrize(('platforms', 'starts', 'registration', 'out', 'registrations', 'removals'), PLATFORMS_SETUP)
     def test_autostart(
         self,
         tmp_path: pathlib.Path,
@@ -814,8 +856,10 @@ class TestTerminalCommandSetup:
         slack: slack_sdk.web.WebClient,
         platforms: frozenset[str],
         starts: list[str],
+        registration: str | None,
         out: str,
-        registrations: int
+        registrations: int,
+        removals: int
     ) -> None:
 
         def connect(
@@ -825,17 +869,21 @@ class TestTerminalCommandSetup:
             return slack
 
         register = unittest.mock.Mock(return_value = 'xxx')
+        unregister = unittest.mock.Mock(return_value = registration)
+        log = pathlib.Path(os.path.join(tmp_path, 'start.log'))
 
         monkeypatch.setenv('THREADVAULT_DATA_DIRECTORY', str(tmp_path))
         monkeypatch.setattr(threadvault.slack.api, 'connect', connect)
         monkeypatch.setattr(threadvault.vault.repository, 'verify', unittest.mock.Mock(return_value = '2.47.0'))
-        monkeypatch.setattr(threadvault.autostart, 'register', register)
-        monkeypatch.setattr(threadvault.autostart, 'PLATFORMS', platforms)
         answer(monkeypatch, starts = starts)
+        monkeypatch.setattr(threadvault.autostart, 'register', register)
+        monkeypatch.setattr(threadvault.autostart, 'unregister', unregister)
+        monkeypatch.setattr(threadvault.autostart, 'PLATFORMS', platforms)
 
         assert threadvault.terminal.main(['setup']) == 0
         assert capsys.readouterr().out.endswith(out)
-        assert register.call_args_list == [unittest.mock.call(pathlib.Path(os.path.join(tmp_path, 'start.log')))] * registrations
+        assert register.call_args_list == [unittest.mock.call(log)] * registrations
+        assert unregister.call_args_list == [unittest.mock.call(log)] * removals
 
     def test_failure(
         self,
@@ -948,6 +996,7 @@ class TestTerminalCommandSetup:
         monkeypatch.setattr(builtins, 'input', enter)
         monkeypatch.setattr(threadvault.github.oauth, 'request', unittest.mock.Mock())
         monkeypatch.setattr(threadvault.vault.repository, 'verify', unittest.mock.Mock(return_value = '2.47.0'))
+        monkeypatch.setattr(threadvault.autostart, 'unregister', unittest.mock.Mock(return_value = None))
         monkeypatch.setattr(threadvault.autostart, 'PLATFORMS', frozenset({sys.platform}))
 
         assert threadvault.terminal.main(['setup']) == 0

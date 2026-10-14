@@ -1,6 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 import json
 import os
 import pathlib
+
+import pytest
 
 import threadvault.vault.export
 
@@ -53,3 +58,32 @@ def test_export_json_deletion(
     threadvault.vault.export.messages(tmp_path, [message for message in messages if message['ts'] in {'1510880400.000000', '1510963199.000000'}], users)
 
     assert [entry.name for entry in tmp_path.iterdir()] == ['2017-11-17.json']
+
+def test_export_json_interruption(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch
+) -> None:
+
+    file = pathlib.Path(os.path.join(tmp_path, threadvault.vault.export.USERS_FILE))
+    threadvault.vault.export.users(tmp_path, [])
+    previous = file.read_bytes()
+    write = pathlib.Path.write_text
+
+    def interrupt(
+        path: pathlib.Path,
+        data: str,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None
+    ) -> int:
+
+        write(path, data[:1], encoding = encoding, errors = errors, newline = newline)
+
+        raise OSError('xxx')
+
+    monkeypatch.setattr(pathlib.Path, 'write_text', interrupt)
+
+    with pytest.raises(OSError, match = 'xxx'): threadvault.vault.export.users(tmp_path, [])
+
+    assert file.read_bytes() == previous
+    assert [entry.name for entry in tmp_path.iterdir()] == [threadvault.vault.export.USERS_FILE]

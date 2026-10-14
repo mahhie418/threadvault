@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Command-line entry point."""
 
 import argparse
@@ -77,6 +80,8 @@ def _build() -> argparse.ArgumentParser:
     start = commands.add_parser('start', help = 'run the Slack app until it is stopped')
     start.set_defaults(handler = _start)
     start.add_argument('--log', type = pathlib.Path, help = 'file to append the output to', metavar = 'FILE')
+    stop = commands.add_parser('stop', help = 'stop the Slack app and stop it from starting at login')
+    stop.set_defaults(handler = _stop)
     manifest = commands.add_parser('manifest', help = 'print the manifest for creating the Slack app')
     manifest.set_defaults(handler = _manifest)
     doctor = commands.add_parser('doctor', help = 'check the settings, Slack, git, GitHub and the destination')
@@ -197,6 +202,24 @@ def _serve() -> int:
         _report('ERROR', str(error))
 
         return 1
+
+    return 0
+
+def _stop(
+    _: argparse.Namespace
+) -> int:
+
+    try:
+
+        registration = threadvault.autostart.unregister(pathlib.Path(os.path.join(threadvault.configuration.load().threadvault_data_directory, 'start.log')))
+
+    except (threadvault.configuration.ConfigurationError, threadvault.autostart.AutostartError) as error:
+
+        _report('ERROR', str(error))
+
+        return 1
+
+    _report('OK', f'autostart: removed {registration}' if registration else 'autostart: not registered')
 
     return 0
 
@@ -430,13 +453,17 @@ def _autostart() -> None:
 
     if sys.platform in threadvault.autostart.PLATFORMS: print()
 
+    log = pathlib.Path(os.path.join(threadvault.configuration.load().threadvault_data_directory, 'start.log'))
+
     if sys.platform not in threadvault.autostart.PLATFORMS or not _agree('Start the Slack app automatically when you log in?', default = True):
 
-        _report('NEXT', f"run '{threadvault.product.COMMAND} start' to start the Slack app", blank = True)
+        registration = threadvault.autostart.unregister(log) if sys.platform in threadvault.autostart.PLATFORMS else None
+
+        if registration: _report('OK', f'autostart: removed {registration}', blank = True)
+
+        _report('NEXT', f"run '{threadvault.product.COMMAND} start' to start the Slack app", blank = not registration)
 
         return
-
-    log = pathlib.Path(os.path.join(threadvault.configuration.load().threadvault_data_directory, 'start.log'))
 
     _report('OK', f'autostart: {threadvault.autostart.register(log)}', blank = True)
 

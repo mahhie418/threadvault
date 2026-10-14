@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """State file that keeps the layout of the vault between runs."""
 
 import collections.abc
@@ -6,6 +9,7 @@ import os
 import pathlib
 
 import threadvault.product
+import threadvault.vault.layout
 
 STATE_DIRECTORY = '.threadvault'
 STATE_FILE = 'state.json'
@@ -14,7 +18,7 @@ FORMAT_VERSION = 1
 
 class StateError(Exception):
 
-    """Raised when the state file of a vault cannot be used."""
+    """Raised when the vault contains invalid state or unsafe paths."""
 
 def load(
     vault: pathlib.Path
@@ -43,7 +47,7 @@ def load(
     match data:
 
         case {'format_version': int() as version} if version > FORMAT_VERSION: raise StateError(f'{path} was written by a newer version of {threadvault.product.NAME}')
-        case {'format_version': 1, 'directories': {**directories}} if all(isinstance(name, str) for name in directories.values()): return directories
+        case {'format_version': 1, 'directories': {**directories}} if all(isinstance(name, str) and threadvault.vault.layout.validate(name) for name in directories.values()): return directories
         case _: raise StateError(f'{path} is not a state file of {threadvault.product.NAME}')
 
 def save(

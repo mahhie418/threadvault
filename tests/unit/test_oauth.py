@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 import datetime
 import typing
 import urllib.parse
@@ -12,8 +15,9 @@ CODE = threadvault.github.oauth.Code(device_code = 'xxx1', user_code = 'XXXX-XXX
 TOKENS = {'access_token': 'ghu_xxx', 'expires_in': 28800, 'refresh_token': 'ghr_xxx', 'refresh_token_expires_in': 15897600, 'scope': '', 'token_type': 'bearer'}
 
 REQUESTS_FAILED = [
-    (httpx.ConnectError('xxx'), 'connection'),
-    (httpx.Response(200, json = {'error': 'device_flow_disabled', 'error_description': 'xxx'}), 'device_flow_disabled')
+    (httpx.ConnectError('xxx'), 'connection', 'GitHub could not be reached: xxx'),
+    (httpx.Response(404, json = {'error': 'Not Found'}), 'status', 'GitHub answered 404 to POST /login/device/code: {"error":"Not Found"}'),
+    (httpx.Response(200, json = {'error': 'device_flow_disabled', 'error_description': 'xxx'}), 'device_flow_disabled', 'xxx')
 ]
 
 POLLS_FAILED = [
@@ -38,10 +42,11 @@ def test_oauth_code_success() -> None:
     assert code == CODE
     assert read(route.calls.last.request) == {'client_id': ['xxx']}
 
-@pytest.mark.parametrize(('effect', 'reason'), REQUESTS_FAILED)
+@pytest.mark.parametrize(('effect', 'reason', 'message'), REQUESTS_FAILED)
 def test_oauth_code_failure(
     effect: httpx.ConnectError | httpx.Response,
-    reason: str
+    reason: str,
+    message: str
 ) -> None:
 
     with respx.mock:
@@ -50,7 +55,7 @@ def test_oauth_code_failure(
 
         with pytest.raises(threadvault.github.oauth.OAuthError) as exception: threadvault.github.oauth.request('xxx')
 
-    assert exception.value.reason == reason
+    assert (exception.value.reason, str(exception.value)) == (reason, message)
 
 def test_oauth_token_success() -> None:
 

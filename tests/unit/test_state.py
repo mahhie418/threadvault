@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 import json
 import os
 import pathlib
@@ -7,6 +10,8 @@ import pytest
 import threadvault.vault.state
 
 DIRECTORIES = {'CXXX2': 'テスト', 'CXXX1': 'xxx'}
+
+NAMES_UNSAFE = ['', '.', '..', '../xxx', '/xxx', 'xxx/xxx', 'xxx\\xxx', 'xxx.xxx', 'xxx:xxx', 'xxx\x00xxx', 'xxx xxx', 'CON']
 
 STATES_INVALID = [
     ('xxx', 'not valid JSON'),
@@ -70,3 +75,13 @@ def test_state_data_corruption(
     file.write_text(text, encoding = 'utf-8')
 
     with pytest.raises(threadvault.vault.state.StateError, match = message): threadvault.vault.state.load(tmp_path)
+
+@pytest.mark.parametrize('name', NAMES_UNSAFE)
+def test_state_directory_safety(
+    tmp_path: pathlib.Path,
+    name: str
+) -> None:
+
+    threadvault.vault.state.save(tmp_path, {'CXXX1': name})
+
+    with pytest.raises(threadvault.vault.state.StateError): threadvault.vault.state.load(tmp_path)

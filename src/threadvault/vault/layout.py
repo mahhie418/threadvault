@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Directory names that channels get in the vault."""
 
 import collections
@@ -45,6 +48,22 @@ def assign(
     while clashing := _verify(names, bases, pasts.values()): names |= {channel: f'{names[channel]}-{channel}' for channel in clashing}
 
     return pasts | names
+
+def validate(
+    name: str
+) -> bool:
+
+    """Checks whether a directory name is safe on every supported platform.
+
+    Args:
+        name: Directory name from the state file.
+
+    Returns:
+        Whether the name is non-empty, contains no invalid characters and is
+        not reserved for a Windows device.
+    """
+
+    return bool(name) and _PATTERN_CHARACTERS_INVALID.search(name) is None and not ntpath.isreserved(name)
 
 def _sanitise(
     name: str

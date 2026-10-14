@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Roles of Slack users, which decide what each user sees and may do in the Slack app."""
 
 import collections.abc

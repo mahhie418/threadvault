@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Listeners of the Slack app, which answer the events and actions in the workspace."""
 
 import collections.abc
@@ -52,26 +55,21 @@ def register(
     permissions of the admins and transfers the ownership to an admin, as
     `threadvault.slack.permission.restrict` makes sure. When the permissions
     or the ownership change, both the admin and the owner hear of it by
-    direct message, and the owner and every admin hear by direct message
-    when GitHub is connected or disconnected, or when the destination is
-    chosen or created. A backup started from the App Home runs in the
-    background, one at a time, as `threadvault.worker.Worker` makes sure, and
-    the App Home of whoever started it shows the backup while it runs. Every
-    App Home shows how the last backup ended, and the owner and every admin
-    hear by direct message when a backup fails. A resynchronisation is a
-    backup that fetches every channel in full and deletes nothing. Once the
-    destination is chosen, the daily backup runs at the time in the settings
-    of the workspace, and one missed while the app was stopped runs as soon
-    as the app runs again. The settings say whether it runs and its time and
-    time zone, which the Markdown follows too, which channels backups cover
-    and whether the bot joins the public ones first, whether they save
-    attached files and up to which size, and the language of the Markdown.
+    direct message, and the owner and the allowed admins hear by direct
+    message when GitHub is connected or disconnected, when the destination
+    is chosen or created, or when a backup fails. A backup started from the
+    App Home runs in the background, one at a time, as
+    `threadvault.worker.Worker` makes sure, and the App Home of whoever
+    started it shows the backup while it runs. Once the destination is
+    chosen, the daily backup runs at the time in the settings of the
+    workspace, and one missed while the app was stopped runs as soon as the
+    app runs again.
 
     A reply to a thread marks the thread, and the next backup fetches the
     marked threads again, so that it does not miss a reply to a thread older
     than the days that it fetches. An edited or deleted message marks its
     thread, or its day when it is not a reply, for the same reason. The
-    marks go once the backup succeeds.
+    marks of the channels that the backup saved go once it succeeds.
 
     Args:
         application: The application.
@@ -144,7 +142,7 @@ def register(
 
         workspace = store.load(team)
 
-        application.client.views_publish(user_id = user, view = threadvault.slack.view.home(github = inspect(), destination = workspace.repository_name, running = worker.busy(), last = journal.load(team), planned = plan(team, datetime.datetime.now(datetime.UTC)), role = threadvault.slack.permission.role(settings, workspace, user), slug = settings.github_app_slug, language = choose(user)))
+        application.client.views_publish(user_id = user, view = threadvault.slack.view.home(github = inspect(), destination = workspace.repository_name, running = worker.busy(), last = journal.load(team), planned = plan(team, datetime.datetime.now(datetime.UTC)), role = threadvault.slack.permission.role(settings, workspace, user), language = choose(user)))
 
     def show(
         modal: str,
@@ -169,7 +167,9 @@ def register(
         **values: str
     ) -> None:
 
-        for recipient in sorted(threadvault.slack.permission.admins(settings, store.load(team))): tell(recipient, key, **values)
+        workspace = store.load(team)
+
+        for recipient in sorted(admin for admin in threadvault.slack.permission.admins(settings, workspace) if threadvault.slack.permission.role(settings, workspace, admin) in ('owner', 'operator')): tell(recipient, key, **values)
 
     def link(
         team: str,
@@ -286,9 +286,9 @@ def register(
         now, marks = datetime.datetime.now(datetime.UTC), backlog.load(team)
         commit, reason = None, None
 
-        try: _, commit = threadvault.backup.runner.publish(application.client, workspace, directory = directory, full_name = workspace.repository_name, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = days, limit = settings.threadvault_deletions_maximum, now = now, backlog = marks)
+        try: results, commit = threadvault.backup.runner.publish(application.client, workspace, directory = directory, full_name = workspace.repository_name, token = lambda: manager.acquire(datetime.datetime.now(datetime.UTC)), days = days, limit = settings.threadvault_deletions_maximum, now = now, backlog = marks)
         except (threadvault.backup.runner.VaultError, threadvault.backup.runner.LockError, threadvault.github.rest.GitHubError, threadvault.github.token.TokenError, threadvault.vault.repository.GitError, threadvault.vault.state.StateError, slack_sdk.errors.SlackApiError) as error: _LOGGER.warning('Backup failed: %s', error); reason = str(error)
-        else: backlog.clear(team, now)
+        else: backlog.clear(team, now, {result.channel for result in results})
 
         journal.save(team, threadvault.journal.Run(completion = datetime.datetime.now(datetime.UTC), repository = workspace.repository_name, commit = commit, reason = reason))
 
@@ -353,6 +353,7 @@ def register(
 
     def disconnect(
         ack: slack_bolt.Ack,
+        body: dict[str, typing.Any],
         context: slack_bolt.BoltContext
     ) -> None:
 
@@ -363,6 +364,28 @@ def register(
         manager.delete()
         refresh(context.team_id, context.user_id)
         notify(context.team_id, 'notice.disconnection', user = context.user_id)
+
+        container: dict[str, typing.Any] = body.get('view', {})
+
+        if container.get('type') == 'modal': show(container['id'], threadvault.slack.view.disconnect(language = choose(context.user_id)))
+
+    def install(
+        ack: slack_bolt.Ack,
+        body: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        ack()
+
+        if context.user_id is None: return
+
+        application.client.views_open(trigger_id = body['trigger_id'], view = threadvault.slack.view.install(slug = settings.github_app_slug, language = choose(context.user_id)))
+
+    def follow(
+        ack: slack_bolt.Ack
+    ) -> None:
+
+        ack()
 
     def offer(
         ack: slack_bolt.Ack,
@@ -411,9 +434,10 @@ def register(
         if context.user_id is None: return
 
         language = choose(context.user_id)
-        opening: dict[str, typing.Any] = application.client.views_open(trigger_id = body['trigger_id'], view = threadvault.slack.view.propose(accounts = None, language = language)).get('view', {})
+        modal = body['view']['id']
 
-        detach(lambda: gather(opening['id'], language))
+        show(modal, threadvault.slack.view.propose(accounts = None, language = language))
+        detach(lambda: gather(modal, language))
 
     def create(
         ack: slack_bolt.Ack,
@@ -434,8 +458,21 @@ def register(
         ack(response_action = 'update', view = threadvault.slack.view.establish(repository = repository, outcome = 'check', language = language))
         detach(lambda: establish(team, user, view['id'], repository, language))
 
+    def prepare(
+        ack: slack_bolt.Ack,
+        body: dict[str, typing.Any],
+        context: slack_bolt.BoltContext
+    ) -> None:
+
+        ack()
+
+        if context.user_id is None: return
+
+        application.client.views_open(trigger_id = body['trigger_id'], view = threadvault.slack.view.prepare(language = choose(context.user_id)))
+
     def launch(
         ack: slack_bolt.Ack,
+        view: dict[str, typing.Any],
         context: slack_bolt.BoltContext
     ) -> None:
 
@@ -445,20 +482,10 @@ def register(
 
         if team is None or user is None: return
 
-        if not worker.start(lambda: perform(team, user, settings.threadvault_lookback_days), lambda: refresh(team, user)): refresh(team, user)
+        values = view['state']['values']
+        days = None if values[threadvault.slack.view.SCOPE_INPUT][threadvault.slack.view.SCOPE_INPUT]['selected_option']['value'] == 'full' else settings.threadvault_lookback_days
 
-    def resynchronise(
-        ack: slack_bolt.Ack,
-        context: slack_bolt.BoltContext
-    ) -> None:
-
-        ack()
-
-        team, user = context.team_id, context.user_id
-
-        if team is None or user is None: return
-
-        if not worker.start(lambda: perform(team, user, None), lambda: refresh(team, user)): refresh(team, user)
+        if not worker.start(lambda: perform(team, user, days), lambda: refresh(team, user)): refresh(team, user)
 
     def configure(
         ack: slack_bolt.Ack,
@@ -634,13 +661,15 @@ def register(
     application.event('message')(note)
     application.action(threadvault.slack.view.CONNECTION_ACTION)(connect)
     application.action(threadvault.slack.view.DISCONNECTION_ACTION)(disconnect)
+    application.action(threadvault.slack.view.INSTALLATION_ACTION)(install)
+    application.action(threadvault.slack.view.LINK_ACTION)(follow)
     application.action(threadvault.slack.view.DESTINATION_ACTION)(offer)
     application.view(threadvault.slack.view.DESTINATION_CALLBACK)(submit)
     application.options(threadvault.slack.view.REPOSITORY_ACTION)(suggest)
     application.action(threadvault.slack.view.CREATION_ACTION)(propose)
     application.view(threadvault.slack.view.CREATION_CALLBACK)(create)
-    application.action(threadvault.slack.view.BACKUP_ACTION)(launch)
-    application.action(threadvault.slack.view.RESYNCHRONISATION_ACTION)(resynchronise)
+    application.action(threadvault.slack.view.BACKUP_ACTION)(prepare)
+    application.view(threadvault.slack.view.BACKUP_CALLBACK)(launch)
     application.action(threadvault.slack.view.SETTINGS_ACTION)(configure)
     application.options(threadvault.slack.view.TIMEZONE_ACTION)(search)
     application.view(threadvault.slack.view.SETTINGS_CALLBACK)(adjust)

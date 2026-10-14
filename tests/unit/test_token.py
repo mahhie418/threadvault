@@ -1,9 +1,16 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 import collections.abc
 import datetime
+import multiprocessing
+import multiprocessing.connection
+import multiprocessing.synchronize
 import os
 import pathlib
 import threading
 import time
+import unittest.mock
 
 import httpx
 import pytest
@@ -18,6 +25,8 @@ NOW = datetime.datetime(2026, 10, 5, 0, 0, tzinfo = datetime.UTC)
 
 TOKENS_SAVED = threadvault.github.oauth.Tokens(access_token = 'ghu_xxx1', access_expiry = NOW + datetime.timedelta(hours = 8), refresh_token = 'ghr_xxx1', refresh_expiry = NOW + datetime.timedelta(days = 184))
 TOKENS_REFRESHED = {'access_token': 'ghu_xxx2', 'expires_in': 28800, 'refresh_token': 'ghr_xxx2', 'refresh_token_expires_in': 15897600, 'scope': '', 'token_type': 'bearer'}
+
+OPERATIONS_PROCESS = ['acquire', 'delete']
 
 @pytest.fixture
 def database(
@@ -43,6 +52,47 @@ def respond(
     time.sleep(0.1)
 
     return httpx.Response(200, json = TOKENS_REFRESHED)
+
+def contend(
+    path: pathlib.Path,
+    key: bytes,
+    operation: str,
+    entry: multiprocessing.synchronize.Event,
+    release: multiprocessing.synchronize.Event,
+    completion: multiprocessing.synchronize.Event,
+    output: multiprocessing.connection.Connection
+) -> None:
+
+    database = threadvault.storage.Database(path)
+    manager = threadvault.github.token.TokenManager(database, threadvault.encryption.SecretCipher(key), 'xxx')
+
+    def refresh(
+        client_id: str,
+        refresh_token: str
+    ) -> threadvault.github.oauth.Tokens:
+
+        assert (operation, client_id, refresh_token) == ('refresh', 'xxx', TOKENS_SAVED.refresh_token)
+
+        entry.set()
+
+        assert release.wait(10)
+
+        return threadvault.github.oauth.Tokens(access_token = 'ghu_xxx2', access_expiry = NOW + datetime.timedelta(days = 1), refresh_token = 'ghr_xxx2', refresh_expiry = NOW + datetime.timedelta(days = 184))
+
+    try:
+
+        with unittest.mock.patch.object(threadvault.github.oauth, 'refresh', refresh):
+
+            if operation != 'refresh': entry.set()
+
+            if operation == 'delete': manager.delete(); output.send('')
+            else: output.send(manager.acquire(TOKENS_SAVED.access_expiry))
+
+    finally:
+
+        completion.set()
+        database.close()
+        output.close()
 
 def test_token_pair_encryption(
     database: threadvault.storage.Database,
@@ -148,3 +198,44 @@ def test_token_pair_stall(
         respx.post(threadvault.github.oauth.ACCESS_URL).respond(200, json = {'error': 'bad_refresh_token', 'error_description': 'xxx'})
 
         with pytest.raises(threadvault.github.token.TokenError, match = 'could not be refreshed'): manager.acquire(TOKENS_SAVED.access_expiry)
+
+@pytest.mark.parametrize('operation', OPERATIONS_PROCESS)
+def test_token_pair_process(
+    database: threadvault.storage.Database,
+    operation: str
+) -> None:
+
+    key = threadvault.encryption.generate().encode('ascii')
+    manager = threadvault.github.token.TokenManager(database, threadvault.encryption.SecretCipher(key), 'xxx')
+    manager.save(TOKENS_SAVED)
+    context = multiprocessing.get_context('spawn')
+
+    holder_entry, waiter_entry, release, holder_completion, waiter_completion = (context.Event() for _ in range(5))
+    holder_reader, holder_writer = context.Pipe(duplex = False)
+    waiter_reader, waiter_writer = context.Pipe(duplex = False)
+    holder = context.Process(target = contend, args = (database.path, key, 'refresh', holder_entry, release, holder_completion, holder_writer))
+    waiter = context.Process(target = contend, args = (database.path, key, operation, waiter_entry, release, waiter_completion, waiter_writer))
+    holder.start()
+
+    try:
+
+        assert holder_entry.wait(10)
+
+        waiter.start()
+
+        assert waiter_entry.wait(10)
+        assert not waiter_completion.wait(0.2)
+
+    finally:
+
+        release.set()
+        holder.join(10)
+
+        if waiter.pid is not None: waiter.join(10)
+
+    assert holder.exitcode == waiter.exitcode == 0
+    assert holder_reader.recv() == 'ghu_xxx2'
+    assert waiter_reader.recv() == ('ghu_xxx2' if operation == 'acquire' else '')
+    assert manager.connected() == (operation != 'delete')
+
+    for connection in (holder_reader, holder_writer, waiter_reader, waiter_writer): connection.close()

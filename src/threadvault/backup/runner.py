@@ -1,15 +1,20 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """One run that backs up the workspace into a vault directory, or into its vault on GitHub."""
 
 import collections.abc
 import contextlib
 import dataclasses
 import datetime
+import decimal
 import itertools
 import json
 import logging
 import os
 import pathlib
 import sqlite3
+import tempfile
 import typing
 
 import slack_sdk
@@ -33,6 +38,7 @@ import threadvault.vault.state
 ATTRIBUTES_FILE = '.gitattributes'
 _ATTRIBUTES_CONTENT = '*.json text eol=lf\n*.md text eol=lf\n'
 VAULTS_DIRECTORY = 'vaults'
+_RENAMES_FILE = 'renames.json'
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,7 +93,9 @@ def run(
     yet, and every channel when `days` is None, is fetched in full, and
     nothing is deleted from it. Any other channel is fetched for the last
     `days` days and merged into what the vault holds.
-    A renamed channel first moves to the directory of its new name. The vault
+    When their combined deletions exceed `limit`, every candidate is kept.
+    A renamed channel first moves to the directory of its new name. Moves
+    are recorded before they start and resumed after an interruption. The vault
     then gets the users and the channels, the messages of each channel as
     Slack's export writes them, the Markdown of each channel and its index,
     and the state file. When the settings enable attachments, the attached
@@ -123,7 +131,7 @@ def run(
 
     Raises:
         slack_sdk.errors.SlackApiError: Slack refused a request.
-        threadvault.vault.state.StateError: The state file of the vault cannot be used.
+        threadvault.vault.state.StateError: The vault contains invalid state or unsafe paths.
     """
 
     url = client.auth_test().get('url', '')
@@ -132,52 +140,82 @@ def run(
     joined = _join(client, channels, settings)
     targets = [channel for channel in channels if (channel.get('is_member') or channel['id'] in joined) and (settings.channel_mode == 'joined' or channel['id'] in settings.channels_selected)]
     members = {channel['id']: threadvault.slack.api.members(client, channel['id']) for channel in targets}
+
+    _recover(vault)
+
     previous = threadvault.vault.state.load(vault)
     directories = threadvault.vault.layout.assign({channel['id']: channel['name'] for channel in targets}, previous)
     raw = pathlib.Path(os.path.join(vault, threadvault.vault.export.RAW_DIRECTORY))
     transcripts = pathlib.Path(os.path.join(vault, threadvault.vault.markdown.TRANSCRIPTS_DIRECTORY))
     progress = {channel: directory for channel, directory in directories.items() if channel in previous}
     marked = backlog or threadvault.backup.backlog.Backlog()
-    results = []
+    results = {}
 
-    _move((raw, transcripts), previous, directories)
+    _move(vault, previous, directories)
 
     raw.mkdir(parents = True, exist_ok = True)
     threadvault.vault.export.users(raw, users)
     threadvault.vault.export.channels(raw, targets, members)
 
-    for channel in targets:
+    def write(
+        channel: collections.abc.Mapping[str, typing.Any],
+        outcome: threadvault.vault.merge.Outcome,
+        saved: int,
+        failed: int
+    ) -> None:
 
-        recent = days is not None and channel['id'] in previous
         directory = directories[channel['id']]
-        stored = _read(pathlib.Path(os.path.join(raw, directory)))
-        oldest, latest = threadvault.backup.fetch.window(now, days if recent else None)
-        windows = [(oldest, latest), *threadvault.backup.fetch.days(marked.days.get(channel['id'], ()), oldest)]
-        history = [message for start, end in windows for message in threadvault.slack.api.history(client, channel['id'], oldest = start, latest = end)]
-        threads = {thread_ts: threadvault.slack.api.replies(client, channel['id'], thread_ts) for thread_ts in threadvault.backup.fetch.threads(history, stored, marked.threads.get(channel['id'], ()))}
-        outcome = threadvault.vault.merge.merge(stored, history, threads, windows = windows, now = now, limit = limit if recent else 0)
-        saved, failed = _download(client, vault, itertools.chain(history, *threads.values()), settings.attachment_size_maximum * 1024 * 1024) if settings.attachments_enabled else (0, 0)
         paths = {file['id']: threadvault.vault.files.locate(file) for file in threadvault.vault.files.select(outcome.messages)}
         attachments = {file_id: path for file_id, path in paths.items() if pathlib.Path(os.path.join(vault, path)).is_file()}
 
         threadvault.vault.export.messages(pathlib.Path(os.path.join(raw, directory)), outcome.messages, users)
         threadvault.vault.markdown.transcribe(pathlib.Path(os.path.join(transcripts, directory)), channel, outcome.messages, users = users, channels = channels, attachments = attachments, url = url, timezone = settings.workspace_timezone, language = settings.markdown_language)
 
-        if limit is not None: limit -= len(outcome.deleted)
+        results[channel['id']] = Result(channel = channel['id'], directory = directory, messages = len(outcome.messages), deleted = len(outcome.deleted), withheld = len(outcome.withheld), files = saved, failures = failed)
 
-        results.append(Result(channel = channel['id'], directory = directory, messages = len(outcome.messages), deleted = len(outcome.deleted), withheld = len(outcome.withheld), files = saved, failures = failed))
-
-        if recent: continue
+        if days is not None and channel['id'] in previous: return
 
         progress[channel['id']] = directory
         threadvault.vault.state.save(vault, progress)
 
-        if checkpoint is not None: checkpoint(results[-1])
+        if checkpoint is not None: checkpoint(results[channel['id']])
+
+    with tempfile.TemporaryDirectory(prefix = 'threadvault-') as temporary:
+
+        pending = {}
+        deletions = 0
+
+        for channel in targets:
+
+            recent = days is not None and channel['id'] in previous
+            outcome, saved, failed = _fetch(client, vault, settings, channel['id'], directories[channel['id']], marked, days = days if recent else None, limit = None if recent and limit else limit if recent else 0, now = now)
+
+            if recent and limit:
+
+                path = pathlib.Path(os.path.join(temporary, f'{channel['id']}.json'))
+                _stage(path, outcome, saved, failed)
+                pending[channel['id']] = path
+                deletions += len(outcome.deleted)
+
+            else:
+
+                write(channel, outcome, saved, failed)
+
+            del outcome
+
+        for channel in targets:
+
+            if channel['id'] not in pending: continue
+
+            outcome, saved, failed = _restore(pending[channel['id']], delete = limit is None or deletions <= limit)
+            write(channel, outcome, saved, failed)
+
+            del outcome
 
     threadvault.vault.markdown.catalogue(vault, targets, directories, timezone = settings.workspace_timezone, language = settings.markdown_language)
     threadvault.vault.state.save(vault, directories)
 
-    return results
+    return [results[channel['id']] for channel in targets]
 
 def publish(
     client: slack_sdk.web.WebClient,
@@ -228,7 +266,7 @@ def publish(
         threadvault.github.rest.GitHubError: GitHub refused a request, or could not be reached.
         threadvault.vault.repository.GitError: git is missing or too old, or a git command failed.
         slack_sdk.errors.SlackApiError: Slack refused a request.
-        threadvault.vault.state.StateError: The state file of the vault cannot be used.
+        threadvault.vault.state.StateError: The vault contains invalid state or unsafe paths.
     """
 
     with hold(directory):
@@ -266,10 +304,8 @@ def hold(
 
     """Holds the lock of the clone of a vault while a backup writes it.
 
-    The lock file sits next to the clone. As with the lock of the app, it is
-    a SQLite database held in an exclusive transaction, which works alike on
-    every operating system, and the lock goes when the process ends, even
-    when it crashes.
+    The lock file sits next to the clone and works as
+    `threadvault.slack.application.lock` does.
 
     Args:
         directory: Directory of the clone; its parent is created when missing.
@@ -344,6 +380,52 @@ def _join(
 
     return joined
 
+def _fetch(
+    client: slack_sdk.web.WebClient,
+    vault: pathlib.Path,
+    settings: threadvault.customisation.Settings,
+    channel: str,
+    directory: str,
+    backlog: threadvault.backup.backlog.Backlog,
+    *,
+    days: int | None,
+    limit: int | None,
+    now: datetime.datetime
+) -> tuple[threadvault.vault.merge.Outcome, int, int]:
+
+    stored = _read(pathlib.Path(os.path.join(vault, threadvault.vault.export.RAW_DIRECTORY, directory)))
+    oldest, latest = threadvault.backup.fetch.window(now, days)
+    windows = [(oldest, latest), *threadvault.backup.fetch.days(backlog.days.get(channel, ()), oldest)]
+    history = [message for start, end in windows for message in threadvault.slack.api.history(client, channel, oldest = start, latest = end)]
+    threads = {thread_ts: threadvault.slack.api.replies(client, channel, thread_ts) for thread_ts in threadvault.backup.fetch.threads(history, () if days is None else stored, backlog.threads.get(channel, ()))}
+    outcome = threadvault.vault.merge.merge(stored, history, threads, windows = windows, now = now, limit = limit)
+    saved, failed = _download(client, vault, itertools.chain(history, *threads.values()), settings.attachment_size_maximum * 1024 * 1024) if settings.attachments_enabled else (0, 0)
+
+    return outcome, saved, failed
+
+def _stage(
+    path: pathlib.Path,
+    outcome: threadvault.vault.merge.Outcome,
+    saved: int,
+    failed: int
+) -> None:
+
+    with path.open('w', encoding = 'utf-8') as stream: json.dump({'messages': outcome.messages, 'deleted': outcome.deleted, 'files': saved, 'failures': failed}, stream, ensure_ascii = False)
+
+def _restore(
+    path: pathlib.Path,
+    *,
+    delete: bool
+) -> tuple[threadvault.vault.merge.Outcome, int, int]:
+
+    with path.open(encoding = 'utf-8') as stream: data = json.load(stream)
+
+    deleted = data['deleted']
+    messages = data['messages'] if delete else sorted([*data['messages'], *deleted], key = lambda message: decimal.Decimal(message['ts']))
+    outcome = threadvault.vault.merge.Outcome(messages = messages, deleted = deleted if delete else [], withheld = [] if delete else deleted)
+
+    return outcome, data['files'], data['failures']
+
 def _download(
     client: slack_sdk.web.WebClient,
     vault: pathlib.Path,
@@ -366,24 +448,123 @@ def _download(
     return saved, failed
 
 def _move(
-    parents: collections.abc.Iterable[pathlib.Path],
+    vault: pathlib.Path,
     previous: collections.abc.Mapping[str, str],
     directories: collections.abc.Mapping[str, str]
 ) -> None:
 
     moves = {channel: (previous[channel], directory) for channel, directory in directories.items() if previous.get(channel, directory) != directory}
-    steps = [(old, f'.{channel}') for channel, (old, _) in moves.items()] + [(f'.{channel}', new) for channel, (_, new) in moves.items()]
+    progress = {channel: directories[channel] for channel in previous}
+
+    _check(vault, set(previous.values()) | set(directories.values()) | {f'.{channel}' for channel in moves})
+
+    if not moves: return
+
+    _record(vault, {'directories': progress, 'moves': moves, 'phase': 'staging'})
+    _recover(vault)
+
+def _recover(
+    vault: pathlib.Path
+) -> None:
+
+    path = pathlib.Path(os.path.join(vault, threadvault.vault.state.STATE_DIRECTORY, _RENAMES_FILE))
+
+    try: text = path.read_text(encoding = 'utf-8')
+    except FileNotFoundError: return
+
+    try: record = json.loads(text)
+    except json.JSONDecodeError: raise threadvault.vault.state.StateError(f'{path} is not valid JSON') from None
+
+    match record:
+
+        case {'directories': {**directories}, 'moves': {**moves}, 'phase': ('staging' | 'placing') as phase} if all(isinstance(name, str) and threadvault.vault.layout.validate(name) for name in directories.values()) and all(map(_validate_move, moves.values())): parents = _check(vault, set(directories.values()) | {name for pair in moves.values() for name in pair} | {f'.{channel}' for channel in moves})
+        case _: raise threadvault.vault.state.StateError(f'{path} is not a rename record of {threadvault.product.NAME}')
+
+    if phase == 'staging':
+
+        for parent in parents:
+
+            for channel, (old, _) in moves.items():
+
+                source, temporary = _locate(parent, old), _locate(parent, f'.{channel}')
+
+                if source.exists() and not temporary.exists(): source.rename(temporary)
+
+        record['phase'] = 'placing'
+        _record(vault, record)
 
     for parent in parents:
 
-        for source, target in steps:
+        for channel, (_, new) in moves.items():
 
-            path = pathlib.Path(os.path.join(parent, source))
+            temporary = _locate(parent, f'.{channel}')
 
-            if path.exists(): path.rename(pathlib.Path(os.path.join(parent, target)))
+            if temporary.exists(): temporary.rename(_locate(parent, new))
+
+    threadvault.vault.state.save(vault, directories)
+    path.unlink()
+
+def _validate_move(
+    pair: object
+) -> bool:
+
+    match pair:
+
+        case [str() as old, str() as new]: return threadvault.vault.layout.validate(old) and threadvault.vault.layout.validate(new)
+        case _: return False
+
+def _record(
+    vault: pathlib.Path,
+    record: dict[str, typing.Any]
+) -> None:
+
+    path = pathlib.Path(os.path.join(vault, threadvault.vault.state.STATE_DIRECTORY, _RENAMES_FILE))
+    temporary = path.with_name(f'{path.name}.tmp')
+    path.parent.mkdir(parents = True, exist_ok = True)
+
+    try:
+
+        temporary.write_text(f'{json.dumps(record, ensure_ascii = False, sort_keys = True)}\n', encoding = 'utf-8', newline = '\n')
+        temporary.replace(path)
+
+    finally:
+
+        temporary.unlink(missing_ok = True)
+
+def _check(
+    vault: pathlib.Path,
+    names: collections.abc.Collection[str]
+) -> tuple[pathlib.Path, pathlib.Path]:
+
+    parents = (pathlib.Path(os.path.join(vault, threadvault.vault.export.RAW_DIRECTORY)), pathlib.Path(os.path.join(vault, threadvault.vault.markdown.TRANSCRIPTS_DIRECTORY)))
+
+    for parent in parents:
+
+        if parent.resolve().parent != parent.parent.resolve(): raise threadvault.vault.state.StateError(f'{parent} points outside the vault')
+
+        for name in names: _locate(parent, name)
+
+    return parents
+
+def _locate(
+    parent: pathlib.Path,
+    name: str
+) -> pathlib.Path:
+
+    path = pathlib.Path(os.path.join(parent, name))
+
+    if path.resolve().parent != parent.resolve(): raise threadvault.vault.state.StateError(f'{path} points outside {parent}')
+
+    return path
 
 def _read(
     directory: pathlib.Path
 ) -> list[dict[str, typing.Any]]:
 
-    return [message for path in sorted(directory.glob('*.json')) for message in json.loads(path.read_text(encoding = 'utf-8'))]
+    paths = sorted(directory.glob('*.json'))
+
+    for path in paths:
+
+        if path.is_symlink() or not path.is_file(): raise threadvault.vault.state.StateError(f'{path} is not a regular message file')
+
+    return [message for path in paths for message in json.loads(path.read_text(encoding = 'utf-8'))]

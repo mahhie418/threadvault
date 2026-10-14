@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Workspace data in the JSON format of Slack's own export."""
 
 import collections
@@ -125,5 +128,13 @@ def _write(
 ) -> None:
 
     text = json.dumps(document, ensure_ascii = False, indent = 2, sort_keys = True)
+    temporary = path.with_name(f'{path.name}.tmp')
 
-    path.write_text(f'{text}\n', encoding = 'utf-8', newline = '\n')
+    try:
+
+        temporary.write_text(f'{text}\n', encoding = 'utf-8', newline = '\n')
+        temporary.replace(path)
+
+    finally:
+
+        temporary.unlink(missing_ok = True)

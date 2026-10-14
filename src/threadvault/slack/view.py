@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Views of the Slack app: the App Home and its modals."""
 
 import datetime
@@ -16,9 +19,11 @@ type DestinationOutcome = typing.Literal['check', 'success', 'absence', 'publici
 type CreationOutcome = typing.Literal['check', 'success', 'failure']
 
 BACKUP_ACTION = 'backup_action'
-RESYNCHRONISATION_ACTION = 'resynchronisation_action'
+BACKUP_CALLBACK = 'backup_callback'
 CONNECTION_ACTION = 'connection_action'
 DISCONNECTION_ACTION = 'disconnection_action'
+INSTALLATION_ACTION = 'installation_action'
+LINK_ACTION = 'link_action'
 DESTINATION_ACTION = 'destination_action'
 DESTINATION_CALLBACK = 'destination_callback'
 CREATION_ACTION = 'creation_action'
@@ -46,6 +51,7 @@ JOINING_INPUT = 'joining_input'
 ATTACHMENTS_INPUT = 'attachments_input'
 SIZE_INPUT = 'size_input'
 LANGUAGE_INPUT = 'language_input'
+SCOPE_INPUT = 'scope_input'
 
 _OPTION_LIMIT = 100
 _DISPLAY_LIMIT = 75
@@ -60,28 +66,30 @@ def home(
     last: threadvault.journal.Run | None,
     planned: datetime.datetime | None,
     role: threadvault.slack.permission.Role,
-    slug: str,
     language: threadvault.configuration.Language
 ) -> dict[str, typing.Any]:
 
     """Builds the App Home, which shows the state of the backup.
 
-    Everyone sees when the last backup ended and whether it succeeded. The
-    owner and the admins also see the commit that it left in the vault, or
-    why it failed. Everyone also sees when the daily backup runs next.
+    Each item takes one block: its name, below it its state when it has one,
+    and a button at the right when the viewer may act on it. Headings group
+    the items about the backup, GitHub and the owner actions.
 
-    While a backup is running, everyone sees so. Otherwise, while GitHub is
-    connected and the destination is chosen, the owner and the admins allowed
-    to operate the app see a button that backs up the workspace at once, and
-    one that resynchronises the whole workspace once they confirm it.
+    Everyone sees when the last backup ended and whether it succeeded,
+    whether a backup is running, and when the daily backup runs next. The
+    owner and the admins also see their own role.
 
-    The owner and the admins also see the destination and their own role.
-    The owner and the admins allowed to operate the app see a button that
-    connects GitHub, connects it again once the connection has stopped
-    working, or disconnects it, buttons that choose or create the destination
-    while GitHub is connected, a button that opens the settings, and a link
-    to install the GitHub App while it has no installation. The owner also
-    sees buttons that choose the admins allowed to operate the app and that
+    Only the owner and the admins allowed to operate the app see anything
+    about GitHub: the state of the connection, the destination, and the
+    commit that the last backup left in the vault or why it failed. They
+    also see a button that backs up the workspace at once while GitHub is
+    connected, the destination is chosen and no backup is running, a button
+    that opens the settings, a button that connects GitHub, connects it
+    again once the connection has stopped working, opens a modal to install
+    the GitHub App while it has no installation, or disconnects GitHub, and
+    a button that chooses the destination, or creates a repository for it,
+    while GitHub is connected. The owner also sees red buttons, each with a
+    caution, that choose the admins allowed to operate the app and that
     transfer the ownership to an admin.
 
     Args:
@@ -94,7 +102,6 @@ def home(
         last: The backup that ended last, or None before the first one ends.
         planned: Time of the next daily backup, or None while none is planned.
         role: Role of the viewer.
-        slug: URL slug of the GitHub App.
         language: Language of the viewer.
 
     Returns:
@@ -105,32 +112,30 @@ def home(
 
         case 'disconnected': connection = threadvault.localisation.translate('home.github.disconnected', language)
         case 'expired': connection = threadvault.localisation.translate('home.github.expired', language)
+        case 'uninstalled': connection = threadvault.localisation.translate('home.github.uninstalled', language)
         case _: connection = threadvault.localisation.translate('home.github.connected', language)
 
-    fields = [(threadvault.localisation.translate('home.github', language), connection)]
+    report = _report(last = last, role = role, language = language)
     blocks = []
 
-    if role != 'member':
+    if running: report = f"{report}\n{threadvault.localisation.translate('home.backup.running', language)}"
+    if role != 'member': blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate(f'home.role.{role}', language)}]})
 
-        fields.append((threadvault.localisation.translate('home.destination', language), f'<https://github.com/{destination}|{destination}>' if destination else threadvault.localisation.translate('home.destination.missing', language)))
-        blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate(f'home.role.{role}', language)}]})
+    blocks.append(_heading(threadvault.localisation.translate('home.heading.backup', language)))
+    blocks.append(_item(threadvault.localisation.translate('home.backup.last', language), report, _action(BACKUP_ACTION, threadvault.localisation.translate('home.backup', language), style = 'primary') if role in ('owner', 'operator') and github == 'connected' and destination and not running else None))
+    blocks.append(_item(threadvault.localisation.translate('home.schedule', language), _date(planned) if planned else threadvault.localisation.translate('home.schedule.missing', language), _action(SETTINGS_ACTION, threadvault.localisation.translate('home.settings', language)) if role in ('owner', 'operator') else None))
 
-    fields.append((threadvault.localisation.translate('home.backup.last', language), _report(last = last, role = role, language = language)))
-    fields.append((threadvault.localisation.translate('home.schedule', language), _date(planned) if planned else threadvault.localisation.translate('home.schedule.missing', language)))
-    blocks.append({'type': 'section', 'fields': [_text(title, text) for title, text in fields]})
+    if role in ('owner', 'operator'):
 
-    if running: blocks.append({'type': 'context', 'elements': [{'type': 'mrkdwn', 'text': threadvault.localisation.translate('home.backup.running', language)}]})
-    elif role in ('owner', 'operator') and github == 'connected' and destination: blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': BACKUP_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.backup', language))}, {'type': 'button', 'action_id': RESYNCHRONISATION_ACTION, 'text': _plain(threadvault.localisation.translate('home.resynchronisation', language)), 'confirm': _confirmation('resynchronisation', 'primary', language)}]})
+        blocks.extend([{'type': 'divider'}, _heading(threadvault.localisation.translate('home.github', language))])
+        blocks.append(_item(threadvault.localisation.translate('home.connection', language), connection, _button(github = github, language = language)))
+        blocks.append(_item(threadvault.localisation.translate('home.destination', language), f'<https://github.com/{destination}|{destination}>' if destination else threadvault.localisation.translate('home.destination.missing', language), _action(DESTINATION_ACTION, threadvault.localisation.translate('home.destination.choice', language)) if github == 'connected' else None))
 
-    buttons = [_button(github = github, language = language)]
+    if role == 'owner':
 
-    if github == 'connected': buttons.extend({'type': 'button', 'action_id': action, 'text': _plain(threadvault.localisation.translate(key, language))} for action, key in ((DESTINATION_ACTION, 'home.destination.choice'), (CREATION_ACTION, 'home.destination.creation')))
-
-    buttons.append({'type': 'button', 'action_id': SETTINGS_ACTION, 'text': _plain(threadvault.localisation.translate('home.settings', language))})
-
-    if role in ('owner', 'operator'): blocks.append({'type': 'actions', 'elements': buttons})
-    if role in ('owner', 'operator') and github == 'uninstalled': blocks.append({'type': 'section', 'text': _text(threadvault.localisation.translate('home.installation', language), threadvault.localisation.translate('home.installation.missing', language, url = f'https://github.com/apps/{slug}/installations/new'))})
-    if role == 'owner': blocks.append({'type': 'actions', 'elements': [{'type': 'button', 'action_id': action, 'text': _plain(threadvault.localisation.translate(key, language))} for action, key in ((PERMISSIONS_ACTION, 'home.permissions'), (TRANSFER_ACTION, 'home.transfer'))]})
+        blocks.extend([{'type': 'divider'}, _heading(threadvault.localisation.translate('home.heading.owner', language))])
+        blocks.append(_item(threadvault.localisation.translate('home.permissions', language), threadvault.localisation.translate('home.permissions.caution', language), _action(PERMISSIONS_ACTION, threadvault.localisation.translate('home.permissions.action', language), style = 'danger')))
+        blocks.append(_item(threadvault.localisation.translate('home.transfer', language), threadvault.localisation.translate('home.transfer.caution', language), _action(TRANSFER_ACTION, threadvault.localisation.translate('home.transfer.action', language), style = 'danger')))
 
     return {'type': 'home', 'blocks': blocks}
 
@@ -179,6 +184,46 @@ def respond(
 
     return _modal(threadvault.localisation.translate('connection.title', language), text, language)
 
+def install(
+    *,
+    slug: str,
+    language: threadvault.configuration.Language
+) -> dict[str, typing.Any]:
+
+    """Builds the modal that asks for the GitHub App to be installed while GitHub is connected but the App has no installation.
+
+    It links to the page that installs the GitHub App, and offers to
+    disconnect GitHub, for when the admin connected the wrong account.
+
+    Args:
+        slug: URL slug of the GitHub App.
+        language: Language of the admin.
+
+    Returns:
+        The view, as views.open takes it.
+    """
+
+    link = {'type': 'button', 'action_id': LINK_ACTION, 'style': 'primary', 'url': f'https://github.com/apps/{slug}/installations/new', 'text': _plain(threadvault.localisation.translate('installation.link', language))}
+    blocks = [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': threadvault.localisation.translate('installation.text', language)}}, {'type': 'actions', 'elements': [link]}, {'type': 'section', 'text': {'type': 'mrkdwn', 'text': threadvault.localisation.translate('installation.account', language)}}, {'type': 'actions', 'elements': [_button(github = 'connected', language = language)]}]
+
+    return {'type': 'modal', 'title': _plain(threadvault.localisation.translate('installation.title', language)), 'close': _plain(threadvault.localisation.translate('modal.close', language)), 'blocks': blocks}
+
+def disconnect(
+    *,
+    language: threadvault.configuration.Language
+) -> dict[str, typing.Any]:
+
+    """Builds the modal that tells the admin that GitHub is disconnected, once they disconnect it from the modal that installs the GitHub App.
+
+    Args:
+        language: Language of the admin.
+
+    Returns:
+        The view, as views.update takes it.
+    """
+
+    return _modal(threadvault.localisation.translate('installation.title', language), threadvault.localisation.translate('disconnection.success', language), language)
+
 def offer(
     *,
     current: str | None,
@@ -186,6 +231,9 @@ def offer(
 ) -> dict[str, typing.Any]:
 
     """Builds the modal that chooses the destination among the private repositories that the GitHub App can access.
+
+    A button below the menu turns the modal into the one that creates a
+    private repository for the destination instead.
 
     Args:
         current: Repository of the vault, as owner/name, or None while none is chosen.
@@ -201,7 +249,7 @@ def offer(
 
     block = {'type': 'input', 'block_id': REPOSITORY_ACTION, 'label': _plain(threadvault.localisation.translate('destination.repository', language)), 'hint': _plain(threadvault.localisation.translate('destination.hint', language)), 'element': menu}
 
-    return {'type': 'modal', 'callback_id': DESTINATION_CALLBACK, 'title': _plain(threadvault.localisation.translate('destination.title', language)), 'submit': _plain(threadvault.localisation.translate('destination.submit', language)), 'close': _plain(threadvault.localisation.translate('destination.close', language)), 'blocks': [block]}
+    return {'type': 'modal', 'callback_id': DESTINATION_CALLBACK, 'title': _plain(threadvault.localisation.translate('destination.title', language)), 'submit': _plain(threadvault.localisation.translate('destination.submit', language)), 'close': _plain(threadvault.localisation.translate('destination.close', language)), 'blocks': [block, {'type': 'actions', 'elements': [_action(CREATION_ACTION, threadvault.localisation.translate('destination.creation', language))]}]}
 
 def suggest(
     names: list[str]
@@ -257,7 +305,7 @@ def propose(
         language: Language of the admin.
 
     Returns:
-        The view, as views.open and views.update take it.
+        The view, as views.update takes it.
     """
 
     title = threadvault.localisation.translate('creation.title', language)
@@ -389,6 +437,30 @@ def nominate(
 
     return {'type': 'modal', 'callback_id': TRANSFER_CONFIRMATION, 'private_metadata': successor, 'title': _plain(threadvault.localisation.translate('transfer.title', language)), 'submit': _plain(threadvault.localisation.translate('transfer.confirm', language)), 'close': _plain(threadvault.localisation.translate('transfer.back', language)), 'blocks': [{'type': 'section', 'text': {'type': 'mrkdwn', 'text': threadvault.localisation.translate('transfer.question', language, user = successor)}}]}
 
+def prepare(
+    *,
+    language: threadvault.configuration.Language
+) -> dict[str, typing.Any]:
+
+    """Builds the modal that backs up the workspace at once.
+
+    The admin chooses whether the backup fetches the recent days again, as
+    the daily backup does, or the whole history of every channel again,
+    which deletes nothing from the vault and can take a long time.
+
+    Args:
+        language: Language of the admin.
+
+    Returns:
+        The view, as views.open takes it.
+    """
+
+    scopes = {scope: {'text': _plain(threadvault.localisation.translate(f'backup.scope.{scope}', language)), 'value': scope} for scope in ('recent', 'full')}
+    scopes['full']['description'] = _plain(threadvault.localisation.translate('backup.scope.full.description', language))
+    block = {'type': 'input', 'block_id': SCOPE_INPUT, 'label': _plain(threadvault.localisation.translate('backup.scope', language)), 'element': {'type': 'radio_buttons', 'action_id': SCOPE_INPUT, 'options': list(scopes.values()), 'initial_option': scopes['recent']}}
+
+    return {'type': 'modal', 'callback_id': BACKUP_CALLBACK, 'title': _plain(threadvault.localisation.translate('backup.title', language)), 'submit': _plain(threadvault.localisation.translate('backup.submit', language)), 'close': _plain(threadvault.localisation.translate('backup.close', language)), 'blocks': [block]}
+
 def configure(
     *,
     workspace: threadvault.customisation.Settings,
@@ -397,12 +469,11 @@ def configure(
 
     """Builds the modal that changes the settings of the workspace, showing their current values.
 
-    The daily backup runs at its time in its time zone, which the Markdown
-    follows too from the next backup. Backups cover every channel that the
-    bot is in, or only the chosen ones among them, which the bot first joins
-    when they are public and joining is on, and save the attached files up
-    to a size, or none. The Markdown follows the chosen language too from
-    the next backup.
+    The daily backup runs at its time in its time zone. Backups cover every
+    channel that the bot is in, or only the chosen ones among them, which the
+    bot first joins when they are public and joining is on, and save the
+    attached files up to a size, or none. From the next backup, the Markdown
+    follows the time zone and the chosen language.
 
     Args:
         workspace: Settings of the workspace to show.
@@ -433,6 +504,37 @@ def configure(
 
     return {'type': 'modal', 'callback_id': SETTINGS_CALLBACK, 'title': _plain(threadvault.localisation.translate('settings.title', language)), 'submit': _plain(threadvault.localisation.translate('settings.submit', language)), 'close': _plain(threadvault.localisation.translate('settings.close', language)), 'blocks': blocks}
 
+def _heading(
+    text: str
+) -> dict[str, typing.Any]:
+
+    return {'type': 'header', 'text': _plain(text)}
+
+def _item(
+    title: str,
+    text: str,
+    accessory: dict[str, typing.Any] | None
+) -> dict[str, typing.Any]:
+
+    block = {'type': 'section', 'text': _text(title, text)}
+
+    if accessory is not None: block['accessory'] = accessory
+
+    return block
+
+def _action(
+    action: str,
+    text: str,
+    *,
+    style: str | None = None
+) -> dict[str, typing.Any]:
+
+    button = {'type': 'button', 'action_id': action, 'text': _plain(text)}
+
+    if style is not None: button['style'] = style
+
+    return button
+
 def _button(
     *,
     github: GitHubState,
@@ -441,8 +543,9 @@ def _button(
 
     if github == 'disconnected': return {'type': 'button', 'action_id': CONNECTION_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.github.connection', language))}
     if github == 'expired': return {'type': 'button', 'action_id': CONNECTION_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.github.reconnection', language))}
+    if github == 'uninstalled': return {'type': 'button', 'action_id': INSTALLATION_ACTION, 'style': 'primary', 'text': _plain(threadvault.localisation.translate('home.github.installation', language))}
 
-    return {'type': 'button', 'action_id': DISCONNECTION_ACTION, 'style': 'danger', 'text': _plain(threadvault.localisation.translate('home.github.disconnection', language)), 'confirm': _confirmation('disconnection', 'danger', language)}
+    return {'type': 'button', 'action_id': DISCONNECTION_ACTION, 'text': _plain(threadvault.localisation.translate('home.github.disconnection', language)), 'confirm': _confirmation('disconnection', 'danger', language)}
 
 def _confirmation(
     key: str,
@@ -463,10 +566,10 @@ def _report(
 
     time = _date(last.completion)
 
-    if last.commit is None: text, detail = threadvault.localisation.translate('home.backup.failure', language, time = time), last.reason
-    else: text, detail = threadvault.localisation.translate('home.backup.success', language, time = time), f'<https://github.com/{last.repository}/commit/{last.commit}|{last.commit[:7]}>'
+    if role not in ('owner', 'operator'): return threadvault.localisation.translate('home.backup.failure' if last.commit is None else 'home.backup.success', language, time = time)
+    if last.commit is None: return f"{threadvault.localisation.translate('home.backup.failure', language, time = time)}\n{last.reason}"
 
-    return text if role == 'member' else f'{text}\n{detail}'
+    return threadvault.localisation.translate('home.backup.success.commit', language, time = time, commit = f'<https://github.com/{last.repository}/commit/{last.commit}|{last.commit[:7]}>')
 
 def _date(
     moment: datetime.datetime

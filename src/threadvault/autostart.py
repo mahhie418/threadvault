@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Start of the Slack app at login: a launchd agent on macOS and a scheduled task on Windows."""
 
 import importlib.resources
@@ -13,7 +16,7 @@ PLATFORMS = frozenset({'darwin', 'win32'})
 
 class AutostartError(Exception):
 
-    """Raised when the Slack app cannot be registered to start at login."""
+    """Raised when the start of the Slack app at login cannot be registered or removed."""
 
 def register(
     log: pathlib.Path
@@ -26,7 +29,8 @@ def register(
     finds git, and appends the output to the log. On Windows, a scheduled
     task of the user runs it with the windowless Python of this installation,
     from a task file next to the log, and the Slack app appends its output to
-    the log itself.
+    the log itself. Registration also starts the app immediately, stopping
+    an earlier scheduled instance on Windows first.
 
     Args:
         log: File for the output of the Slack app.
@@ -43,6 +47,32 @@ def register(
     if sys.platform == 'win32': return _schedule(log)
 
     raise AutostartError(f'Starting at login is not supported on {sys.platform}')
+
+def unregister(
+    log: pathlib.Path
+) -> str | None:
+
+    """Stops the Slack app that starts at login, and removes its registration.
+
+    On macOS, the launchd agent is booted out, which stops the Slack app, and
+    its file is deleted. On Windows, the running scheduled task is ended, and
+    the task and its file next to the log are deleted.
+
+    Args:
+        log: File for the output of the Slack app.
+
+    Returns:
+        Where the registration was described, or None when there was none.
+
+    Raises:
+        AutostartError: This system is not supported, or it refused to delete
+                        the registration.
+    """
+
+    if sys.platform == 'darwin': return _unload(os.getuid())
+    if sys.platform == 'win32': return _cancel(log)
+
+    raise AutostartError(f'Removing the start at login is not supported on {sys.platform}')
 
 def _launch(
     log: pathlib.Path,
@@ -72,6 +102,43 @@ def _schedule(
 
     try: subprocess.run([command, '/Create', '/TN', LABEL, '/XML', str(task), '/F'], capture_output = True, encoding = 'utf-8', errors = 'replace', check = True)
     except subprocess.CalledProcessError as error: raise AutostartError(f'Task Scheduler refused {task}: {error.stderr.strip()}') from None
+
+    subprocess.run([command, '/End', '/TN', LABEL], capture_output = True, check = False)
+
+    try: subprocess.run([command, '/Run', '/TN', LABEL], capture_output = True, encoding = 'utf-8', errors = 'replace', check = True)
+    except subprocess.CalledProcessError as error: raise AutostartError(f'Task Scheduler could not start {LABEL}: {error.stderr.strip()}') from None
+
+    return str(task)
+
+def _unload(
+    user: int
+) -> str | None:
+
+    agent = pathlib.Path(os.path.join(pathlib.Path.home(), 'Library', 'LaunchAgents', f'{LABEL}.plist'))
+
+    subprocess.run(['/bin/launchctl', 'bootout', f'gui/{user}/{LABEL}'], capture_output = True, check = False)
+
+    if not agent.exists(): return None
+
+    agent.unlink()
+
+    return str(agent)
+
+def _cancel(
+    log: pathlib.Path
+) -> str | None:
+
+    task = pathlib.Path(os.path.join(log.parent, f'{LABEL}.xml'))
+    command = os.path.join(os.environ.get('SYSTEMROOT', 'C:\\Windows'), 'System32', 'schtasks.exe')
+
+    if subprocess.run([command, '/Query', '/TN', LABEL], capture_output = True, check = False).returncode != 0: return None
+
+    subprocess.run([command, '/End', '/TN', LABEL], capture_output = True, check = False)
+
+    try: subprocess.run([command, '/Delete', '/TN', LABEL, '/F'], capture_output = True, encoding = 'utf-8', errors = 'replace', check = True)
+    except subprocess.CalledProcessError as error: raise AutostartError(f'Task Scheduler refused to delete {LABEL}: {error.stderr.strip()}') from None
+
+    task.unlink(missing_ok = True)
 
     return str(task)
 

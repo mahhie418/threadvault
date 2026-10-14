@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Times of the daily backup, kept in the wall-clock time of the workspace."""
 
 import datetime

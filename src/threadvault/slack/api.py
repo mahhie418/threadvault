@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Calls to Slack for the backup: the Web API, with pagination and retries, and file downloads."""
 
 import collections.abc
@@ -67,8 +70,8 @@ def channels(
     """Fetches the public and private channels that the bot can see, except Slack Connect channels.
 
     The bot sees every public channel, but a private channel only when it is
-    a member. A channel that is shared with another organisation, or waiting
-    to be, is left out.
+    a member. A channel waiting to be shared with another organisation is
+    left out too.
 
     Args:
         client: Slack client for the workspace.

@@ -1,14 +1,26 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """GitHub tokens of the deployment, kept encrypted and refreshed before they expire."""
 
+import collections.abc
+import contextlib
 import datetime
 import json
+import os
+import pathlib
+import sqlite3
 import threading
+import time
 
 import threadvault.encryption
 import threadvault.github.oauth
 import threadvault.storage
 
 EXPIRY_MARGIN = datetime.timedelta(minutes = 5)
+
+_LOCK_FILE = 'github.lock'
+_LOCK_INTERVAL = 0.1
 
 _TOKENS_SELECT = 'SELECT credential_data FROM github WHERE credential_id = 1'
 _TOKENS_DELETE = 'DELETE FROM github WHERE credential_id = 1'
@@ -29,8 +41,9 @@ class TokenManager:
 
     """GitHub tokens in the database, encrypted there and refreshed one at a time.
 
-    A refresh token works only once, so only one thread refreshes at a time,
-    and the new pair is saved before it is used.
+    A refresh token works only once, so threads and processes share a lock.
+    The saved pair is read after the lock is acquired, and a refreshed pair
+    is saved before it is used. Saving and disconnecting share the lock too.
     """
 
     _LOCK = threading.Lock()
@@ -65,10 +78,7 @@ class TokenManager:
             tokens: Tokens from the device flow or a refresh.
         """
 
-        data = json.dumps({'access_token': tokens.access_token, 'access_expiry': tokens.access_expiry.isoformat(), 'refresh_token': tokens.refresh_token, 'refresh_expiry': tokens.refresh_expiry.isoformat()}, sort_keys = True)
-        update_time = datetime.datetime.now(datetime.UTC).isoformat()
-
-        with self._database.begin() as connection: connection.execute(_TOKENS_UPSERT, (self._cipher.encrypt(data), update_time))
+        with self._LOCK, _hold(self._database.path): self._save(tokens)
 
     def acquire(
         self,
@@ -89,7 +99,7 @@ class TokenManager:
             threadvault.encryption.SecretKeyError: The tokens cannot be decrypted.
         """
 
-        with self._LOCK:
+        with self._LOCK, _hold(self._database.path):
 
             tokens = self._load()
 
@@ -99,7 +109,7 @@ class TokenManager:
             try: tokens = threadvault.github.oauth.refresh(self._client_id, tokens.refresh_token)
             except threadvault.github.oauth.OAuthError as error: raise TokenError(f'The GitHub token could not be refreshed: {error}') from error
 
-            self.save(tokens)
+            self._save(tokens)
 
         return tokens.access_token
 
@@ -114,7 +124,7 @@ class TokenManager:
         authorisation until the user revokes it on GitHub.
         """
 
-        with self._LOCK, self._database.begin() as connection: connection.execute(_TOKENS_DELETE)
+        with self._LOCK, _hold(self._database.path), self._database.begin() as connection: connection.execute(_TOKENS_DELETE)
 
     def connected(
         self
@@ -139,3 +149,37 @@ class TokenManager:
         data = json.loads(self._cipher.decrypt(row['credential_data']))
 
         return threadvault.github.oauth.Tokens(access_token = data['access_token'], access_expiry = datetime.datetime.fromisoformat(data['access_expiry']), refresh_token = data['refresh_token'], refresh_expiry = datetime.datetime.fromisoformat(data['refresh_expiry']))
+
+    def _save(
+        self,
+        tokens: threadvault.github.oauth.Tokens
+    ) -> None:
+
+        data = json.dumps({'access_token': tokens.access_token, 'access_expiry': tokens.access_expiry.isoformat(), 'refresh_token': tokens.refresh_token, 'refresh_expiry': tokens.refresh_expiry.isoformat()}, sort_keys = True)
+        update_time = datetime.datetime.now(datetime.UTC).isoformat()
+
+        with self._database.begin() as connection: connection.execute(_TOKENS_UPSERT, (self._cipher.encrypt(data), update_time))
+
+@contextlib.contextmanager
+def _hold(
+    database: pathlib.Path
+) -> collections.abc.Generator[None]:
+
+    connection = sqlite3.connect(pathlib.Path(os.path.join(database.parent, _LOCK_FILE)), timeout = _LOCK_INTERVAL, autocommit = True)
+
+    try:
+
+        while True:
+
+            try: connection.execute('BEGIN EXCLUSIVE'); break
+            except sqlite3.OperationalError as error:
+
+                if error.sqlite_errorcode not in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED): raise
+
+                time.sleep(_LOCK_INTERVAL)
+
+        yield
+
+    finally:
+
+        connection.close()

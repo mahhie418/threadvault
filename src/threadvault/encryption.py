@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Mahiro Sakaue
+# SPDX-License-Identifier: MIT
+
 """Encryption for secrets kept on disk, such as GitHub tokens."""
 
 import os
